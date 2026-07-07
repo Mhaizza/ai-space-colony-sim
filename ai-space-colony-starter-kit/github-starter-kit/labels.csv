@@ -1,0 +1,38 @@
+name,description,color
+phase-0,"AI Studio, setup, governance",BFDADC
+phase-1,Core game design and simulation design,0E8A16
+phase-2,Agent runtime and AI behavior,1D76DB
+phase-3,Station systems and world model,5319E7
+phase-4,Social dynamics and relationships,FBCA04
+phase-5,Events and crises,D93F0B
+phase-6,UI and dashboard,C5DEF5
+phase-7,3D visualization,0052CC
+phase-8,Alpha polish,5319E7
+phase-9,Release preparation,000000
+P0,Critical path / must do first,B60205
+P1,High priority,D93F0B
+P2,Medium priority,FBCA04
+P3,Low priority / future,0E8A16
+architecture,Architecture and system design,5319E7
+simulation,Simulation systems,006B75
+ai,AI agents and behavior,1D76DB
+gameplay,Gameplay systems,7057FF
+world,World/station design,008672
+ui,User interface and UX,C5DEF5
+backend,"Persistence, APIs, services",BFD4F2
+documentation,Docs and specifications,0075CA
+research,Research/spikes,D4C5F9
+testing,Tests and QA,FBCA04
+performance,Performance optimization,D93F0B
+infrastructure,Tooling and CI/CD,F9D0C4
+audio,Audio/music/SFX,E99695
+art,Visual/art direction,FEF2C0
+feature,New feature,0E8A16
+task,Task/chore,C2E0C6
+bug,Something is not working,D73A4A
+refactor,Code restructuring,5319E7
+enhancement,Improvement,A2EEEF
+spike,Research/prototype,D4C5F9
+design,Game design work,FBCA04
+adr,Architecture Decision Record required,000000
+blocked,Blocked by dependency,B60205

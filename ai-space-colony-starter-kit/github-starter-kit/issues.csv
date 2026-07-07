@@ -1,0 +1,3442 @@
+title,body,labels,milestone,owner,status
+[Phase 0] Create AI Studio Structure,"## Goal
+
+Create initial repo folders for AI Studio, design, docs, and game.
+
+## Acceptance Criteria
+
+- [ ] ai-studio/ folder exists
+- [ ] design/ folder exists
+- [ ] game/ folder exists
+- [ ] docs/ folder exists
+- [ ] README files created
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `README.md`
+- `ai-studio/README.md`
+- `design/README.md`
+- `game/README.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,ChatGPT,Backlog
+[Phase 0] Create Global Constitution,"## Goal
+
+Create the core governance docs for the AI studio.
+
+## Acceptance Criteria
+
+- [ ] vision.md created
+- [ ] principles.md created
+- [ ] architecture.md created
+- [ ] coding-standards.md created
+- [ ] glossary.md created
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/constitution/vision.md`
+- `ai-studio/constitution/principles.md`
+- `ai-studio/constitution/architecture.md`
+- `ai-studio/constitution/coding-standards.md`
+- `ai-studio/constitution/glossary.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,Claude,Backlog
+[Phase 0] Create Kanban Update Protocol,"## Goal
+
+Define mandatory Kanban update workflow.
+
+## Acceptance Criteria
+
+- [ ] Before-start rules defined
+- [ ] During-work rules defined
+- [ ] Completion update format defined
+- [ ] Definition of Done defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/workflows/kanban-update-protocol.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,ChatGPT,Backlog
+[Phase 0] Create AI Role Prompts,"## Goal
+
+Create role prompts for AI studio team.
+
+## Acceptance Criteria
+
+- [ ] Executive roles created
+- [ ] Design roles created
+- [ ] Engineering roles created
+- [ ] QA roles created
+- [ ] Every role includes responsibilities and boundaries
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/roles/`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,Claude,Backlog
+[Phase 0] Create ADR Template,"## Goal
+
+Create reusable Architecture Decision Record template.
+
+## Acceptance Criteria
+
+- [ ] ADR template created
+- [ ] Status/context/decision/consequences included
+- [ ] Usage instructions included
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/templates/adr.md`
+- `docs/adr/README.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,ChatGPT,Backlog
+[Phase 0] Create Feature Workflow,"## Goal
+
+Define how features move from idea to done.
+
+## Acceptance Criteria
+
+- [ ] Discovery step defined
+- [ ] Design step defined
+- [ ] Architecture review step defined
+- [ ] Implementation step defined
+- [ ] QA/review step defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/workflows/feature-workflow.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,ChatGPT,Backlog
+[Phase 0] Create Bug Workflow,"## Goal
+
+Define bug triage and fix workflow.
+
+## Acceptance Criteria
+
+- [ ] Reproduction requirements defined
+- [ ] Root cause section defined
+- [ ] Fix validation defined
+- [ ] Regression test requirement defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/workflows/bug-workflow.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,ChatGPT,Backlog
+[Phase 0] Create Review Checklists,"## Goal
+
+Create review checklists for architecture, design, code, and QA.
+
+## Acceptance Criteria
+
+- [ ] Architecture checklist created
+- [ ] Game design checklist created
+- [ ] Code checklist created
+- [ ] QA checklist created
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `ai-studio/workflows/review-workflow.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-0;P0;documentation;task,M0 - AI Studio,ChatGPT,Backlog
+[Phase 1] Design Core Gameplay Loop,"## Goal
+
+Define moment-to-moment, daily, crisis, build, and long-term loops.
+
+## Acceptance Criteria
+
+- [ ] Core loop defined
+- [ ] Crisis loop defined
+- [ ] Build/upgrade loop defined
+- [ ] Social loop defined
+- [ ] Progression loop defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/core-loop.md`
+- `design/player-experience.md`
+- `design/game-pillars.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;gameplay,M1 - Vision & Core Design,Claude,Backlog
+[Phase 1] Design Game Pillars,"## Goal
+
+Define non-negotiable design pillars for the game.
+
+## Acceptance Criteria
+
+- [ ] 3-5 pillars defined
+- [ ] Each pillar has examples
+- [ ] Anti-pillars defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/game-pillars.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;gameplay,M1 - Vision & Core Design,Claude,Backlog
+[Phase 1] Design Time Engine,"## Goal
+
+Specify deterministic simulation time model.
+
+## Acceptance Criteria
+
+- [ ] Tick rate defined
+- [ ] Pause/speed rules defined
+- [ ] Scheduling model defined
+- [ ] Edge cases listed
+- [ ] Test cases listed
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/time-engine.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;simulation,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Resource Engine,"## Goal
+
+Specify generic resource storage/flow model.
+
+## Acceptance Criteria
+
+- [ ] Resource schema defined
+- [ ] Production/consumption defined
+- [ ] Storage rules defined
+- [ ] Shortage behavior defined
+- [ ] Test cases listed
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/resource-engine.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;simulation,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Oxygen Engine,"## Goal
+
+Specify oxygen, CO2, leaks, and life-support rules.
+
+## Acceptance Criteria
+
+- [ ] Oxygen production defined
+- [ ] Consumption defined
+- [ ] CO2 handling defined
+- [ ] Leak behavior defined
+- [ ] Emergency states defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/oxygen-engine.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;simulation,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Power Engine,"## Goal
+
+Specify power generation, storage, load, and outage rules.
+
+## Acceptance Criteria
+
+- [ ] Generation defined
+- [ ] Consumption defined
+- [ ] Battery/storage defined
+- [ ] Brownout behavior defined
+- [ ] Failure cases defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/power-engine.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;simulation,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Water and Food Systems,"## Goal
+
+Specify water/food production, storage, and consumption loops.
+
+## Acceptance Criteria
+
+- [ ] Water loop defined
+- [ ] Food loop defined
+- [ ] Hydroponics dependency defined
+- [ ] Shortage effects defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/water-food-engine.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;simulation,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Event Engine,"## Goal
+
+Specify random/state-driven crisis event model.
+
+## Acceptance Criteria
+
+- [ ] Event triggers defined
+- [ ] Probability model defined
+- [ ] Severity defined
+- [ ] Resolution flow defined
+- [ ] Cooldown rules defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/event-engine.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;simulation,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Save Load Requirements,"## Goal
+
+Define serialization requirements for simulation and agents.
+
+## Acceptance Criteria
+
+- [ ] Serializable state listed
+- [ ] Versioning strategy defined
+- [ ] Replay/determinism noted
+- [ ] Migration risk listed
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/save-load-requirements.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;gameplay,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 1] Design Data Model v0,"## Goal
+
+Define initial entities and relationships.
+
+## Acceptance Criteria
+
+- [ ] Colonist entity defined
+- [ ] Station module entity defined
+- [ ] Resource entity defined
+- [ ] Event entity defined
+- [ ] Relationship model noted
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/data-model-v0.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-1;P0;design;gameplay,M1 - Vision & Core Design,ChatGPT,Backlog
+[Phase 2] Design Colonist Agent Model,"## Goal
+
+Define identity, needs, traits, skills, jobs, goals, memory, relationships.
+
+## Acceptance Criteria
+
+- [ ] Agent schema defined
+- [ ] State lifecycle defined
+- [ ] Serialization fields defined
+- [ ] Example colonists included
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/agent-model.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Design Needs System,"## Goal
+
+Define personal and colony-aware needs model.
+
+## Acceptance Criteria
+
+- [ ] Personal needs defined
+- [ ] Colony pressure modifiers defined
+- [ ] Decay/recovery rates defined
+- [ ] Critical states defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/needs.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Design Personality Traits,"## Goal
+
+Define trait dimensions that affect decisions.
+
+## Acceptance Criteria
+
+- [ ] Trait list defined
+- [ ] Trait ranges defined
+- [ ] Behavior impact examples included
+- [ ] Balance risks listed
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/personality.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Design Goal System,"## Goal
+
+Define short-term and long-term agent goals.
+
+## Acceptance Criteria
+
+- [ ] Goal schema defined
+- [ ] Priority rules defined
+- [ ] Conflict resolution defined
+- [ ] Examples included
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/goals.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Design Memory System,"## Goal
+
+Define memory write/read/forget/retrieve behavior.
+
+## Acceptance Criteria
+
+- [ ] Memory types defined
+- [ ] Retrieval rules defined
+- [ ] Forgetting rules defined
+- [ ] Privacy/scope defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/memory.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Design Decision Loop,"## Goal
+
+Define observe-think-plan-act-reflect loop without overusing LLM.
+
+## Acceptance Criteria
+
+- [ ] Loop steps defined
+- [ ] Cheap decision path defined
+- [ ] LLM escalation rules defined
+- [ ] Action queue defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/decision-loop.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Design Relationship System,"## Goal
+
+Define trust, respect, fear, affection, conflict metrics.
+
+## Acceptance Criteria
+
+- [ ] Relationship graph defined
+- [ ] Event modifiers defined
+- [ ] Decay rules defined
+- [ ] Social examples included
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/relationships.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P0;ai;design,M3 - Agent Runtime,Claude,Backlog
+[Phase 2] Implement Agent Model Types,"## Goal
+
+Implement TypeScript types/interfaces for colonist agent state.
+
+## Acceptance Criteria
+
+- [ ] Types compile
+- [ ] No UI dependencies
+- [ ] Tests/examples included
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/agents/types.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P1;ai;feature,M3 - Agent Runtime,Codex,Backlog
+[Phase 2] Implement Needs Update Function,"## Goal
+
+Implement deterministic needs decay/recovery function.
+
+## Acceptance Criteria
+
+- [ ] Pure function implemented
+- [ ] Unit tests added
+- [ ] Edge cases covered
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/agents/needs.ts`
+- `game/src/agents/needs.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P1;ai;feature,M3 - Agent Runtime,Codex,Backlog
+[Phase 2] Implement Basic Decision Loop,"## Goal
+
+Implement simple rule-based decision loop for v0.
+
+## Acceptance Criteria
+
+- [ ] Observe function created
+- [ ] Decision function created
+- [ ] Action output typed
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/agents/decision-loop.ts`
+- `game/src/agents/decision-loop.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-2;P1;ai;feature,M3 - Agent Runtime,Codex,Backlog
+[Phase 3] Design Station World Model,"## Goal
+
+Define hierarchy: station, deck, module, room, object.
+
+## Acceptance Criteria
+
+- [ ] Hierarchy defined
+- [ ] Coordinate strategy defined
+- [ ] Module connectivity defined
+- [ ] Save fields listed
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/world/station-world-model.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P0;world;design,M4 - Station Systems,Claude,Backlog
+[Phase 3] Design Module System,"## Goal
+
+Define habitat, life support, power, hydroponics, medical, storage modules.
+
+## Acceptance Criteria
+
+- [ ] Module types defined
+- [ ] Inputs/outputs listed
+- [ ] Upgrade slots defined
+- [ ] Failure behavior defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/world/module-system.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P0;world;design,M4 - Station Systems,Claude,Backlog
+[Phase 3] Design Build and Upgrade Mode,"## Goal
+
+Define player building workflow and constraints.
+
+## Acceptance Criteria
+
+- [ ] Placement rules defined
+- [ ] Cost rules defined
+- [ ] Power/oxygen hooks defined
+- [ ] UX states defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/world/build-upgrade-mode.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P0;world;design,M4 - Station Systems,Claude,Backlog
+[Phase 3] Design Logistics System,"## Goal
+
+Define resource movement and storage rules.
+
+## Acceptance Criteria
+
+- [ ] Storage zones defined
+- [ ] Reservation rules defined
+- [ ] Transport rules defined
+- [ ] Shortage behavior defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/world/logistics.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P0;world;design,M4 - Station Systems,Claude,Backlog
+[Phase 3] Implement Resource Types,"## Goal
+
+Implement resource types and initial constants.
+
+## Acceptance Criteria
+
+- [ ] Types compile
+- [ ] Core resources included
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/resources/types.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P1;simulation;feature,M4 - Station Systems,Codex,Backlog
+[Phase 3] Implement Time Engine v0,"## Goal
+
+Implement deterministic tick advance.
+
+## Acceptance Criteria
+
+- [ ] Tick function implemented
+- [ ] Pause/speed model typed
+- [ ] Unit tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/time/time-engine.ts`
+- `game/src/simulation/time/time-engine.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P1;simulation;feature,M4 - Station Systems,Codex,Backlog
+[Phase 3] Implement Resource Engine v0,"## Goal
+
+Implement resource production/consumption update.
+
+## Acceptance Criteria
+
+- [ ] Pure update function
+- [ ] Underflow/overflow handled
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/resources/resource-engine.ts`
+- `game/src/simulation/resources/resource-engine.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P1;simulation;feature,M4 - Station Systems,Codex,Backlog
+[Phase 3] Implement Oxygen Engine v0,"## Goal
+
+Implement oxygen production/consumption/leak update.
+
+## Acceptance Criteria
+
+- [ ] Consumption works
+- [ ] Leak works
+- [ ] Critical thresholds emitted
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/life-support/oxygen-engine.ts`
+- `game/src/simulation/life-support/oxygen-engine.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P1;simulation;feature,M4 - Station Systems,Codex,Backlog
+[Phase 3] Implement Power Engine v0,"## Goal
+
+Implement simple generation/consumption/battery model.
+
+## Acceptance Criteria
+
+- [ ] Generation works
+- [ ] Outage state works
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/power/power-engine.ts`
+- `game/src/simulation/power/power-engine.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-3;P1;simulation;feature,M4 - Station Systems,Codex,Backlog
+[Phase 4] Design High-Stakes Social Dynamics,"## Goal
+
+Define social behavior under pressure and colony danger.
+
+## Acceptance Criteria
+
+- [ ] Stress effects defined
+- [ ] Panic behavior defined
+- [ ] Heroic behavior defined
+- [ ] Conflict scenarios included
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/high-stakes-social.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-4;P1;ai;design,M5 - Social Simulation,Claude,Backlog
+[Phase 4] Design Morale System,"## Goal
+
+Define personal and colony morale metrics.
+
+## Acceptance Criteria
+
+- [ ] Morale inputs defined
+- [ ] Morale outputs defined
+- [ ] Thresholds defined
+- [ ] Recovery rules defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/morale.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-4;P1;ai;design,M5 - Social Simulation,Claude,Backlog
+[Phase 4] Design Crew Roles and Specialization,"## Goal
+
+Define engineer, doctor, scientist, botanist, security, commander roles.
+
+## Acceptance Criteria
+
+- [ ] Roles defined
+- [ ] Skills mapped
+- [ ] Task affinities listed
+- [ ] Emergency priorities defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/crew-roles.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-4;P1;ai;design,M5 - Social Simulation,Claude,Backlog
+[Phase 4] Design Social Event Triggers,"## Goal
+
+Define events caused by relationships and stress.
+
+## Acceptance Criteria
+
+- [ ] Friendship events defined
+- [ ] Conflict events defined
+- [ ] Mutiny risk defined
+- [ ] Resolution rules defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/agents/social-events.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-4;P1;ai;design,M5 - Social Simulation,Claude,Backlog
+[Phase 4] Implement Relationship Types,"## Goal
+
+Implement relationship graph types.
+
+## Acceptance Criteria
+
+- [ ] Types compile
+- [ ] Relationship dimensions included
+- [ ] Serialization friendly
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/agents/relationships/types.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-4;P1;ai;feature,M5 - Social Simulation,Codex,Backlog
+[Phase 4] Implement Morale Update v0,"## Goal
+
+Implement morale calculation from needs and station safety.
+
+## Acceptance Criteria
+
+- [ ] Pure function
+- [ ] Thresholds tested
+- [ ] Examples tested
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/agents/morale.ts`
+- `game/src/agents/morale.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-4;P1;ai;feature,M5 - Social Simulation,Codex,Backlog
+[Phase 5] Design Crisis Event Catalog,"## Goal
+
+Create first crisis catalog: oxygen leak, power failure, solar flare, fire, illness.
+
+## Acceptance Criteria
+
+- [ ] At least 10 events defined
+- [ ] Triggers listed
+- [ ] Impacts listed
+- [ ] Resolution paths listed
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/crisis-event-catalog.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-5;P1;simulation;design,M2 - Core Simulation,Claude,Backlog
+[Phase 5] Design AI Director,"## Goal
+
+Define pacing system for crisis intensity.
+
+## Acceptance Criteria
+
+- [ ] Tension meter defined
+- [ ] Cooldowns defined
+- [ ] Escalation rules defined
+- [ ] Mercy rules defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/simulation/ai-director.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-5;P1;simulation;design,M2 - Core Simulation,Claude,Backlog
+[Phase 5] Implement Event Types,"## Goal
+
+Implement event schemas and severity model.
+
+## Acceptance Criteria
+
+- [ ] Types compile
+- [ ] Severity enum included
+- [ ] Event payload typed
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/events/types.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-5;P1;simulation;feature,M2 - Core Simulation,Codex,Backlog
+[Phase 5] Implement Event Engine v0,"## Goal
+
+Implement state-driven event trigger evaluation.
+
+## Acceptance Criteria
+
+- [ ] Trigger evaluation works
+- [ ] Cooldown model works
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/events/event-engine.ts`
+- `game/src/simulation/events/event-engine.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-5;P1;simulation;feature,M2 - Core Simulation,Codex,Backlog
+[Phase 5] Implement Oxygen Leak Event,"## Goal
+
+Implement first playable crisis event.
+
+## Acceptance Criteria
+
+- [ ] Leak modifies oxygen
+- [ ] Alert emitted
+- [ ] Resolution hook exists
+- [ ] Tests added
+
+## Owner
+
+Codex
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/simulation/events/oxygen-leak.ts`
+- `game/src/simulation/events/oxygen-leak.test.ts`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-5;P1;simulation;feature,M2 - Core Simulation,Codex,Backlog
+[Phase 6] Design Colony Dashboard UX,"## Goal
+
+Define main dashboard information hierarchy.
+
+## Acceptance Criteria
+
+- [ ] Critical alerts visible
+- [ ] Oxygen/power/resources visible
+- [ ] Crew overview visible
+- [ ] Drill-down states defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/ui/colony-dashboard.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-6;P1;ui;design,M6 - UI Dashboard,Claude,Backlog
+[Phase 6] Design Crew Panel UX,"## Goal
+
+Define crew list, needs, roles, mood, relationships UI.
+
+## Acceptance Criteria
+
+- [ ] Crew card states defined
+- [ ] Sorting/filtering defined
+- [ ] Critical indicators defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/ui/crew-panel.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-6;P1;ui;design,M6 - UI Dashboard,Claude,Backlog
+[Phase 6] Design Alert System UX,"## Goal
+
+Define alerts, severity, acknowledgements, and action links.
+
+## Acceptance Criteria
+
+- [ ] Severity levels defined
+- [ ] Alert lifecycle defined
+- [ ] Player actions defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/ui/alerts.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-6;P1;ui;design,M6 - UI Dashboard,Claude,Backlog
+[Phase 6] Implement Dashboard Shell,"## Goal
+
+Create initial dashboard UI shell.
+
+## Acceptance Criteria
+
+- [ ] Reusable components
+- [ ] No authoritative state in UI
+- [ ] Mock data clearly separated
+
+## Owner
+
+Cursor
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/ui/dashboard/`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-6;P1;ui;feature,M6 - UI Dashboard,Cursor,Backlog
+[Phase 6] Implement Crew Panel Shell,"## Goal
+
+Create initial crew panel UI.
+
+## Acceptance Criteria
+
+- [ ] Crew list component
+- [ ] Crew detail component
+- [ ] Responsive layout
+
+## Owner
+
+Cursor
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/ui/crew/`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-6;P1;ui;feature,M6 - UI Dashboard,Cursor,Backlog
+[Phase 6] Implement Alert Panel Shell,"## Goal
+
+Create alert panel UI.
+
+## Acceptance Criteria
+
+- [ ] Severity display
+- [ ] Dismiss/ack states
+- [ ] Data-driven props
+
+## Owner
+
+Cursor
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/ui/alerts/`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-6;P1;ui;feature,M6 - UI Dashboard,Cursor,Backlog
+[Phase 7] Design Visual Prototype Scope,"## Goal
+
+Define minimal 3D/visual layer for vertical slice.
+
+## Acceptance Criteria
+
+- [ ] Minimal station view defined
+- [ ] Colonist representation defined
+- [ ] No gameplay dependency on rendering
+- [ ] Performance targets listed
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/world/visual-prototype.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-7;P2;world;design,M7 - 3D Visualization,Claude,Backlog
+[Phase 7] Design Art Direction,"## Goal
+
+Define sci-fi future space colony mood and visual language.
+
+## Acceptance Criteria
+
+- [ ] Mood defined
+- [ ] Palette guidance defined
+- [ ] Material language defined
+- [ ] UI vibe defined
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/world/art-direction.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-7;P2;art;design,M7 - 3D Visualization,Claude,Backlog
+[Phase 7] Implement Simple Station View,"## Goal
+
+Create basic visual station/module representation.
+
+## Acceptance Criteria
+
+- [ ] Modules visible
+- [ ] State overlays possible
+- [ ] No simulation logic in renderer
+
+## Owner
+
+Cursor
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/world/visualization/`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-7;P2;world;feature,M7 - 3D Visualization,Cursor,Backlog
+[Phase 7] Implement Colonist Markers,"## Goal
+
+Display colonist positions/status markers.
+
+## Acceptance Criteria
+
+- [ ] Markers data-driven
+- [ ] Critical states visible
+- [ ] No AI logic in renderer
+
+## Owner
+
+Cursor
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `game/src/world/colonist-markers/`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-7;P2;world;feature,M7 - 3D Visualization,Cursor,Backlog
+[Phase 8] Create Vertical Slice Definition,"## Goal
+
+Define what counts as the first playable vertical slice.
+
+## Acceptance Criteria
+
+- [ ] Player can view colony state
+- [ ] Simulation ticks run
+- [ ] Oxygen crisis can occur
+- [ ] Crew needs update
+- [ ] UI shows alerts
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `docs/vertical-slice.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-8;P0;gameplay;documentation,M8 - Alpha Polish,ChatGPT,Backlog
+[Phase 8] Add Test Strategy,"## Goal
+
+Define test strategy for simulation, agents, UI, and save/load.
+
+## Acceptance Criteria
+
+- [ ] Unit test scope defined
+- [ ] Integration tests defined
+- [ ] Regression checklist defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `docs/test-strategy.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-8;P1;testing;documentation,M8 - Alpha Polish,ChatGPT,Backlog
+[Phase 8] Performance Budget v0,"## Goal
+
+Define performance targets for simulation and UI.
+
+## Acceptance Criteria
+
+- [ ] Tick budget defined
+- [ ] Agent count target defined
+- [ ] Render budget defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `docs/performance-budget.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-8;P1;performance;documentation,M8 - Alpha Polish,ChatGPT,Backlog
+[Phase 9] Save Load Hardening Plan,"## Goal
+
+Define plan to harden save/load and migrations.
+
+## Acceptance Criteria
+
+- [ ] Versioning defined
+- [ ] Migration strategy defined
+- [ ] Corruption handling defined
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `docs/save-load-hardening.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-9;P1;backend;architecture,M9 - Beta,ChatGPT,Backlog
+[Phase 10] Release Checklist,"## Goal
+
+Create release readiness checklist.
+
+## Acceptance Criteria
+
+- [ ] Build checklist
+- [ ] QA checklist
+- [ ] Docs checklist
+- [ ] Known issues section
+
+## Owner
+
+ChatGPT
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `docs/release-checklist.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",phase-9;P2;documentation;task,M10 - Release,ChatGPT,Backlog
+[Backlog] Design Heat & Temperature System,"## Goal
+
+Design the heat & temperature system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Heat & Temperature purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/heat-temperature.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Radiation System,"## Goal
+
+Design the radiation system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Radiation purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/radiation.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Medical Health System,"## Goal
+
+Design the medical health system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Medical Health purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/medical-health.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Sleep Schedule System,"## Goal
+
+Design the sleep schedule system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Sleep Schedule purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/sleep-schedule.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Inventory System,"## Goal
+
+Design the inventory system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Inventory purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/inventory.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Task Assignment System,"## Goal
+
+Design the task assignment system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Task Assignment purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/task-assignment.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Research Tree System,"## Goal
+
+Design the research tree system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Research Tree purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/research-tree.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Robotics System,"## Goal
+
+Design the robotics system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Robotics purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/robotics.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Security System,"## Goal
+
+Design the security system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Security purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/security.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Communication System,"## Goal
+
+Design the communication system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Communication purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/communication.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Docking & Trade System,"## Goal
+
+Design the docking & trade system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Docking & Trade purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/docking-trade.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Waste Recycling System,"## Goal
+
+Design the waste recycling system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Waste Recycling purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/waste-recycling.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Hull Integrity System,"## Goal
+
+Design the hull integrity system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Hull Integrity purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/hull-integrity.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Fire & Atmosphere System,"## Goal
+
+Design the fire & atmosphere system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Fire & Atmosphere purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/fire-atmosphere.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;simulation,M2 - Core Simulation,Claude,Backlog
+[Backlog] Design Tutorial Onboarding System,"## Goal
+
+Design the tutorial onboarding system for future milestones.
+
+## Acceptance Criteria
+
+- [ ] Tutorial Onboarding purpose defined
+- [ ] Inputs/outputs defined
+- [ ] Integration points listed
+- [ ] Risks documented
+
+## Owner
+
+Claude
+
+## Dependencies
+
+None
+
+## Expected Files
+
+- `design/backlog/tutorial-onboarding.md`
+
+## Definition of Done
+
+- [ ] Acceptance criteria satisfied
+- [ ] Relevant docs/code updated
+- [ ] Validation notes added
+- [ ] Follow-up issues created if needed
+- [ ] Kanban card updated
+
+## Required Kanban Update
+
+```txt
+Kanban Update
+
+Card:
+Status:
+Completed:
+Changed Files:
+Validation:
+Follow-up Tasks:
+```
+",P2;design;ui,M2 - Core Simulation,Claude,Backlog

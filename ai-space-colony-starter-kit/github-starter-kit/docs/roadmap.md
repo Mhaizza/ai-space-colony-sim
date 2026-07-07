@@ -1,0 +1,11 @@
+- M0 - AI Studio: AI Studio setup, governance, roles, workflows, kanban rules
+- M1 - Vision & Core Design: Core gameplay loop, design pillars, player experience
+- M2 - Core Simulation: Time, resources, oxygen, power, water, food, events design and skeleton
+- M3 - Agent Runtime: Colonist needs, traits, memory, goals, decision loop
+- M4 - Station Systems: Modules, rooms, build/upgrade, logistics, environment systems
+- M5 - Social Simulation: Relationships, morale, conflict, trust, stress behavior
+- M6 - UI Dashboard: Colony dashboard, crew panel, alerts, build mode UI
+- M7 - 3D Visualization: Basic station visualization, colonist markers, room/module rendering
+- M8 - Alpha Polish: Balancing, performance, tests, playable vertical slice
+- M9 - Beta: Content expansion, QA, save/load hardening, onboarding
+- M10 - Release: Release checklist, docs, builds, marketing assets
