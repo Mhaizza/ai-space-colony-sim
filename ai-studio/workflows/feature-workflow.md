@@ -62,6 +62,12 @@ Do **not** use this workflow for:
 8. [Claude] Move card to In Progress
 9. [Codex] Implement the approved design exactly as specified
    → Ambiguity discovered: stop; raise blocker; wait for clarification
+   → Architecture trigger discovered: stop immediately
+     · Move feature card to Blocked
+     · Open Architecture Workflow card (separate issue)
+     · Unaffected parts of this feature may only continue if filed as a new follow-up issue
+       with its own card — they do not continue under the blocked card
+     · Feature card stays Blocked until Architecture Workflow reaches Done
 10. [Cursor] (Optional) Refactor for code quality without changing behavior
     → Any behavioral change in refactor = new issue, new card
 11. [ChatGPT] Final review: confirm implementation matches approved design + acceptance criteria

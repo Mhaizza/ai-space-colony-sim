@@ -60,10 +60,12 @@ Classification is assigned at report time and may be revised when the root cause
    - Initial classification (Critical / Major / Minor / Trivial)
    - Environment / conditions where bug occurs
 
-2. [Claude] Confirm classification; reclassify if root cause investigation warrants it
-   → Critical: move card to In Progress immediately; notify human collaborator
-   → Major: move card to In Progress within current sprint
-   → Minor/Trivial: card stays in Backlog until scheduled
+2. [Claude] Propose classification in the GitHub Issue with rationale
+   → Critical: post classification + rationale; Human must confirm before any work begins
+   → Major: post classification + rationale; Human must confirm before card moves to In Progress
+   → Minor/Trivial: Claude classifies; no Human confirmation required; card stays in Backlog
+   → If Human disagrees with classification: Human's classification is authoritative;
+     update the Issue label and note the reclassification reason
 
 3. [Claude] Post Start Task record
 
@@ -108,6 +110,8 @@ Classification is assigned at report time and may be revised when the root cause
 
 | Approval | Class | Who | Blocking? |
 |----------|-------|-----|-----------|
+| Classification confirmation | Critical, Major | Human Collaborator | Yes — no work begins without it |
+| Classification confirmation | Minor, Trivial | Not required | — |
 | Fix approach acknowledgement | Critical, Major | Human Collaborator | Yes |
 | Fix approach acknowledgement | Minor, Trivial | Not required | — |
 | Final Review | Critical, Major | ChatGPT | Yes |

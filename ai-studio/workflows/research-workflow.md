@@ -62,7 +62,11 @@ Research does **not** output: "this requires more research," "it depends," or an
 3. [Claude] Investigate within scope
    → Read specifications, academic references, comparable projects
    → Document each option evaluated with: pros, cons, fit with constitution
-   → Do not expand scope without updating the GitHub Issue
+   → If scope expansion is discovered: stop; assess impact before continuing
+   → Scope expansion that adds work, time, or downstream impact requires Human approval
+     before proceeding — post the proposed expansion in the GitHub Issue and wait
+   → Scope expansion that is purely clarifying (same work, clearer boundary) may be
+     noted in the Issue without Human approval
 
 4. [Claude] Form a recommendation
    → Pick one option as the recommendation

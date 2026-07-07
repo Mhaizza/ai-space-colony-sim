@@ -71,10 +71,14 @@ Phase 2 — Documentation
 
 Phase 3 — Version Update
 
-6. [Claude] Determine version number:
+6. [Claude] Determine version number using v0.MINOR.PATCH:
    → Phase 0 complete → v0.1.0
    → Phase N complete → v0.(N+1).0
-   → Breaking changes present → bump MAJOR instead
+   → Breaking changes before v1.0: bump MINOR, not MAJOR
+     (v0.2.0 → v0.3.0, not v1.0.0)
+   → v1.0.0 is reserved for the first production-complete release,
+     declared explicitly by Human — it is not triggered automatically by breaking changes
+   → Patch releases (v0.N.1, v0.N.2): hotfixes only, no new features
 7. [Codex] Update version in package.json (or equivalent)
 8. [Claude] Bump version headers on all amended constitution/governance documents
    → Follow versioning.md rules
