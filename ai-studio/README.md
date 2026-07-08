@@ -4,6 +4,9 @@ The AI Studio is the creative and technical brain of this project. It contains e
 
 No simulation code lives here. Code lives in `src/`. This directory is purely organizational infrastructure.
 
+> **Every AI agent starts here:**
+> [`AI_STUDIO_BOOT.md`](AI_STUDIO_BOOT.md) — read this before doing anything else.
+
 ## Directory Map
 
 ### AI Studio (internal tooling and process)
@@ -20,6 +23,7 @@ No simulation code lives here. Code lives in `src/`. This directory is purely or
 | [`knowledge/`](knowledge/) | Verified, durable reference facts loaded as agent context |
 | [`reviews/`](reviews/) | Completed review records (code, design, architecture) |
 | [`meetings/`](meetings/) | Planning session records, decisions, and action items |
+| [`governance/`](governance/) | Authority matrix, change tiers, versioning, and release process |
 | [`adr/`](adr/) | Architecture Decision Records |
 
 ### Repository root (project-wide, not AI-tooling-specific)
@@ -32,7 +36,7 @@ No simulation code lives here. Code lives in `src/`. This directory is purely or
 
 ## How to Use
 
-1. Before starting any task, read the relevant **role** and **workflow**.
+1. **Always start with [`AI_STUDIO_BOOT.md`](AI_STUDIO_BOOT.md)** — it defines the reading order for every session.
 2. Check `constitution/principles.md` when a decision feels uncertain.
 3. Log every architectural decision in `adr/`.
-4. Finish every task with a **Kanban Update** (format in `prompts/global-system.md`).
+4. Finish every task with a **Kanban Update** (format in `workflows/kanban-update-protocol.md`).
