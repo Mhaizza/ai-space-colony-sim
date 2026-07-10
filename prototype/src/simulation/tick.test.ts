@@ -9,7 +9,7 @@ import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional } from "../world/world.js";
 import { createColonist, withCurrentGoal, withNeeds, withSuspendedGoal } from "../colonist/colonist.js";
 import { createNeeds } from "../colonist/needs.js";
-import { createFreshMemoryBaselines, tick, type SimulationState } from "./tick.js";
+import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState } from "./tick.js";
 import { run } from "./run.js";
 import { commitGoal, suspendGoal } from "../decision/goals.js";
 import { beginExecution, interruptExecution } from "../task/execution.js";
@@ -427,5 +427,247 @@ describe("purity", () => {
     const snapshot = JSON.parse(JSON.stringify(initial));
     run(initial, 50);
     expect(initial).toEqual(snapshot);
+  });
+});
+
+describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () => {
+  function stateWithHungerActiveAndSocialApproachingLow(): SimulationState {
+    const restStart = policy.workTicks; // no shiftAssignment/voluntary competing during rest
+    return stateAtTickOfDay(restStart, {
+      hunger: { level: 0.3, ticksBelowLow: 500 }, // low, not critical — sole initial candidate
+      social: { level: 0.404, ticksBelowLow: 0 }, // crosses low ~10 ticks later — same tier (4)
+    });
+  }
+
+  it("a second low need appearing at the same tier does not replace the active Goal", () => {
+    let state = stateWithHungerActiveAndSocialApproachingLow();
+    let result = tick(state, 1); // bootstrap: hunger goal adopted
+    state = result.state;
+    const originalGoal = state.colonist.currentGoal!;
+    expect(originalGoal.relatedNeed).toBe("hunger");
+
+    let sawSocialCrossing = false;
+    for (let i = 0; i < 30 && !sawSocialCrossing; i++) {
+      result = tick(state, 1);
+      state = result.state;
+      if (result.events.some((e) => e.kind === "needThresholdCrossing" && e.needId === "social")) {
+        sawSocialCrossing = true;
+        // The event is still logged (an honest ambient signal) — but nothing re-decided.
+        expect(result.events.some((e) => e.kind === "decision")).toBe(false);
+        expect(result.events.some((e) => e.kind === "taskResolution")).toBe(false);
+        expect(result.events.some((e) => e.kind === "executionBegun")).toBe(false);
+        expect(state.colonist.currentGoal?.key).toBe(originalGoal.key);
+        expect(state.colonist.currentGoal?.source).toBe("lowNeed");
+        expect(state.colonist.currentGoal?.relatedNeed).toBe("hunger");
+      }
+    }
+    expect(sawSocialCrossing).toBe(true);
+  });
+
+  it("no PRNG draw is consumed when a same-tier candidate appears", () => {
+    let state = stateWithHungerActiveAndSocialApproachingLow();
+    let result = tick(state, 1);
+    state = result.state;
+
+    for (let i = 0; i < 30; i++) {
+      const prngBefore = state.prng;
+      result = tick(state, 1);
+      const sawCrossing = result.events.some((e) => e.kind === "needThresholdCrossing" && e.needId === "social");
+      state = result.state;
+      if (sawCrossing) {
+        expect(state.prng).toEqual(prngBefore); // completely untouched — zero draws
+        return;
+      }
+    }
+    throw new Error("social never crossed low within the test window");
+  });
+
+  it("motivation and adoptedAtTick remain unchanged across a same-tier same-tick trigger", () => {
+    let state = stateWithHungerActiveAndSocialApproachingLow();
+    let result = tick(state, 1);
+    state = result.state;
+    const originalMotivation = state.colonist.currentGoal!.motivation;
+    const originalAdoptedAtTick = state.colonist.currentGoal!.adoptedAtTick;
+
+    for (let i = 0; i < 30; i++) {
+      result = tick(state, 1);
+      state = result.state;
+      if (result.events.some((e) => e.kind === "needThresholdCrossing" && e.needId === "social")) {
+        expect(state.colonist.currentGoal!.motivation).toBe(originalMotivation);
+        expect(state.colonist.currentGoal!.adoptedAtTick).toBe(originalAdoptedAtTick);
+        return;
+      }
+    }
+    throw new Error("social never crossed low within the test window");
+  });
+
+  it("execution progress continues unchanged except for normal per-tick progress", () => {
+    let state = stateWithHungerActiveAndSocialApproachingLow();
+    let result = tick(state, 1);
+    state = result.state;
+    const taskId = state.execution!.taskId;
+
+    let sawCrossing = false;
+    for (let i = 0; i < 30 && !sawCrossing; i++) {
+      const before = state.execution!.elapsedTicks;
+      result = tick(state, 1);
+      state = result.state;
+      expect(state.execution!.taskId).toBe(taskId);
+      expect(state.execution!.status).toBe("inProgress");
+      // Exactly +1 per tick — no reset, no skip, no jump — even on the tick the same-tier
+      // trigger fires.
+      expect(state.execution!.elapsedTicks).toBe(before + 1);
+      sawCrossing = result.events.some((e) => e.kind === "needThresholdCrossing" && e.needId === "social");
+    }
+    expect(sawCrossing).toBe(true);
+  });
+
+  it("a higher-tier candidate still interrupts correctly (the stickiness gate does not suppress real interruptions)", () => {
+    const freeStart = policy.workTicks + policy.restTicks;
+    let state = stateAtTickOfDay(freeStart, { hunger: { level: 0.402, ticksBelowLow: 0 } });
+    let result = tick(state, 1);
+    state = result.state;
+    expect(state.colonist.currentGoal?.source).toBe("voluntary");
+
+    let interrupted = false;
+    for (let i = 0; i < 50 && !interrupted; i++) {
+      result = tick(state, 1);
+      state = result.state;
+      interrupted = result.events.some((e) => e.kind === "higherPriorityCondition");
+    }
+    expect(interrupted).toBe(true);
+    expect(state.colonist.currentGoal?.source).toBe("lowNeed");
+    expect(state.colonist.suspendedGoal?.source).toBe("voluntary");
+  });
+
+  it("completion still permits a new selection", () => {
+    const restStart = policy.workTicks;
+    let state = stateAtTickOfDay(restStart, { rest: { level: 0.3, ticksBelowLow: 500 } });
+    let sawCompletionThenDecision = false;
+    for (let i = 0; i < 300 && !sawCompletionThenDecision; i++) {
+      const result = tick(state, 1);
+      state = result.state;
+      if (result.events.some((e) => e.kind === "completion")) {
+        sawCompletionThenDecision = result.events.some((e) => e.kind === "decision");
+      }
+    }
+    expect(sawCompletionThenDecision).toBe(true);
+  });
+
+  it("blockage still permits a new selection", () => {
+    let state = stateAtTickOfDay(policy.workTicks, { hunger: { level: 0.3, ticksBelowLow: 500 } });
+    let result = tick(state, 1);
+    state = result.state;
+    const brokenWorld = setModuleFunctional(state.world, "foodStation", false);
+    state = { ...state, world: brokenWorld };
+    result = tick(state, 1);
+    // Blockage moves the goal's status away from "active", so the stickiness gate does not
+    // apply and a fresh decision follows in the same tick.
+    expect(result.events.some((e) => e.kind === "blockage")).toBe(true);
+    expect(result.events.some((e) => e.kind === "decision")).toBe(true);
+  });
+});
+
+describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
+  const voluntaryCandidate = { source: "voluntary" as const, tier: 5 as const, key: "voluntary:idle", baseUrgency: 0.2 };
+  const hungerCandidate = {
+    source: "lowNeed" as const,
+    tier: 4 as const,
+    key: "lowNeed:hunger",
+    baseUrgency: 0.4,
+    relatedNeed: "hunger" as const,
+  };
+
+  it("rejects goal present / execution missing", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
+    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: null };
+    expect(() => validateSimulationState(state)).toThrow();
+    expect(() => tick(state, 1)).toThrow(); // input boundary rejects it too
+  });
+
+  it("rejects execution present / goal missing", () => {
+    const base = stateAtTickOfDay(0);
+    const exec = interruptExecution(beginExecution(taskDefinition("idlePresence"), commitGoal(voluntaryCandidate, "m", 0), 0));
+    const state: SimulationState = { ...base, suspendedExecution: exec }; // colonist.suspendedGoal stays null
+    expect(() => validateSimulationState(state)).toThrow();
+    expect(() => tick(state, 1)).toThrow();
+  });
+
+  it("accepts a valid paired state", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
+    const exec = interruptExecution(beginExecution(taskDefinition("idlePresence"), { ...goal, status: "active" }, 0));
+    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: exec };
+    expect(() => validateSimulationState(state)).not.toThrow();
+  });
+
+  it("rejects a mismatched pair — execution.goalKey does not name the suspended goal", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
+    const mismatchedExec = interruptExecution(beginExecution(taskDefinition("eatAtFoodStation"), commitGoal(hungerCandidate, "m", 0), 0));
+    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: mismatchedExec };
+    expect(() => validateSimulationState(state)).toThrow();
+  });
+
+  it("rejects a suspended execution that isn't in 'interrupted' status", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
+    const stillInProgress = beginExecution(taskDefinition("idlePresence"), { ...goal, status: "active" }, 0); // NOT interrupted
+    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: stillInProgress };
+    expect(() => validateSimulationState(state)).toThrow();
+  });
+
+  it("invariant is preserved across suspend, resume, blockage, and overflow — every intermediate tick output validates", () => {
+    // Suspend + resume (free-period interruption/resume scenario).
+    const freeStart = policy.workTicks + policy.restTicks;
+    let state = stateAtTickOfDay(freeStart, { hunger: { level: 0.402, ticksBelowLow: 0 } });
+    let result = tick(state, 1);
+    state = result.state;
+    validateSimulationState(state); // bootstrap output
+
+    for (let i = 0; i < 450; i++) {
+      result = tick(state, 1);
+      state = result.state;
+      validateSimulationState(state); // every tick's output, through interruption and resume
+    }
+    expect(state.colonist.suspendedGoal).toBeNull(); // resumed by the end of the window
+    expect(state.suspendedExecution).toBeNull();
+
+    // Blockage (separate scenario): breaking a module mid-execution must still leave a valid state.
+    let blockageState = stateAtTickOfDay(policy.workTicks, { hunger: { level: 0.3, ticksBelowLow: 500 } });
+    let blockageResult = tick(blockageState, 1);
+    blockageState = blockageResult.state;
+    validateSimulationState(blockageState);
+    blockageState = { ...blockageState, world: setModuleFunctional(blockageState.world, "foodStation", false) };
+    blockageResult = tick(blockageState, 1);
+    validateSimulationState(blockageResult.state);
+
+    // Overflow (hand-built precondition, mirroring the suspension-overflow test above).
+    const voluntarySuspended = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
+    const voluntaryExec = interruptExecution(
+      { ...beginExecution(taskDefinition("idlePresence"), { ...voluntarySuspended, status: "active" }, 0), elapsedTicks: 12 },
+    );
+    const hungerActive = commitGoal(hungerCandidate, "hunger motivation", 5);
+    const hungerExec = { ...beginExecution(taskDefinition("eatAtFoodStation"), hungerActive, 5), elapsedTicks: 7 };
+    let overflowColonist = withCurrentGoal(withSuspendedGoal(createColonist("c1", "Maya"), voluntarySuspended), hungerActive);
+    overflowColonist = withNeeds(overflowColonist, {
+      ...createNeeds(),
+      hunger: { level: 0.5, ticksBelowLow: 0 },
+      rest: { level: 0.05, ticksBelowLow: 500 },
+    });
+    const overflowState: SimulationState = {
+      clock: advance(createClock(), policy.workTicks + policy.restTicks),
+      world: createWorld(),
+      policy,
+      colonist: overflowColonist,
+      execution: hungerExec,
+      suspendedExecution: voluntaryExec,
+      prng: createPrng(1),
+      ...createFreshMemoryBaselines(),
+    };
+    validateSimulationState(overflowState); // the hand-built precondition is itself valid
+    const overflowResult = tick(overflowState, 1);
+    validateSimulationState(overflowResult.state); // and so is the state after overflow resolves
   });
 });

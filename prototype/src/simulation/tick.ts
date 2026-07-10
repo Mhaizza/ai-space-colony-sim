@@ -64,7 +64,9 @@ import {
  * suspended, its interrupted Execution is retained here — never dropped — so resuming the
  * goal resumes the SAME Execution, with `elapsedTicks` intact, instead of restarting from
  * zero. The invariant `colonist.suspendedGoal !== null` iff `suspendedExecution !== null`
- * is maintained by every function in this module that touches either slot.
+ * is maintained by every function in this module that touches either slot, and checked
+ * explicitly by `validateSimulationState` at tick()'s input and every exit point (review fix
+ * 2, 2026-07-10) — malformed state is rejected rather than allowed to silently corrupt.
  */
 export interface SimulationState {
   readonly clock: ClockState;
@@ -108,6 +110,49 @@ export type TickEvent =
 export interface TickResult {
   readonly state: SimulationState;
   readonly events: readonly TickEvent[];
+}
+
+/**
+ * Validates the suspended-pair invariant (review fix 2, 2026-07-10): `colonist.suspendedGoal`
+ * is null iff `suspendedExecution` is null — the pair is retained or cleared together, never
+ * one without the other. When both are present, checks their association as far as Stage 1
+ * data permits: the execution's `goalKey` must name the suspended goal, and a genuinely
+ * suspended execution can only be in the "interrupted" status (never "inProgress",
+ * "completed", or "aborted" while parked in this slot). Throws on violation — malformed state
+ * is rejected explicitly here rather than allowed to silently corrupt downstream logic.
+ */
+export function validateSimulationState(state: SimulationState): void {
+  const { suspendedGoal } = state.colonist;
+  const { suspendedExecution } = state;
+
+  if ((suspendedGoal === null) !== (suspendedExecution === null)) {
+    throw new Error(
+      "Invalid SimulationState: suspendedGoal and suspendedExecution must both be null or both be " +
+        `present — got suspendedGoal=${suspendedGoal === null ? "null" : `"${suspendedGoal.key}"`}, ` +
+        `suspendedExecution=${suspendedExecution === null ? "null" : `"${suspendedExecution.taskId}"`}.`,
+    );
+  }
+
+  if (suspendedGoal !== null && suspendedExecution !== null) {
+    if (suspendedExecution.goalKey !== suspendedGoal.key) {
+      throw new Error(
+        `Invalid SimulationState: suspendedExecution.goalKey ("${suspendedExecution.goalKey}") does not ` +
+          `match suspendedGoal.key ("${suspendedGoal.key}").`,
+      );
+    }
+    if (suspendedExecution.status !== "interrupted") {
+      throw new Error(
+        `Invalid SimulationState: a suspended execution must have status "interrupted", got ` +
+          `"${suspendedExecution.status}".`,
+      );
+    }
+  }
+}
+
+/** Validates the outgoing state before returning it — every tick() exit point goes through here. */
+function finish(state: SimulationState, events: readonly TickEvent[]): TickResult {
+  validateSimulationState(state);
+  return { state, events };
 }
 
 /** Fresh memory-formation baselines for a newly arrived colonist: needs at 1 (matches createNeeds), stress at 0 (matches createStress). */
@@ -250,6 +295,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
         `fixed simulation step is evaluated and no intermediate trigger can be skipped.`,
     );
   }
+  validateSimulationState(state); // input boundary — reject malformed state before processing it
 
   const events: TickEvent[] = [];
 
@@ -391,23 +437,31 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   }
 
   if (!triggered) {
-    return {
-      state: {
-        clock,
-        world,
-        policy: state.policy,
-        colonist,
-        execution,
-        suspendedExecution,
-        prng: state.prng,
-        deprivationBaselines,
-        stressBaseline,
-      },
+    return finish(
+      { clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng, deprivationBaselines, stressBaseline },
       events,
-    };
+    );
   }
 
-  // --- Phase: decision (only reached when a trigger fired) ---
+  // Same-tier commitment stickiness (review fix, 2026-07-10): a trigger fired this tick, but
+  // if it was neither an interruption (something now outranks the current goal) nor a
+  // suspension-resolution, and the current goal is still active — which, given the
+  // completion/blockage checks already ran above whenever an execution was in progress, means
+  // it is still executable — then whatever fired (e.g. a second, same-tier need crossing low,
+  // or a shift boundary that doesn't affect this goal's source) does not by itself warrant
+  // re-deciding. decision-loop §2: "A colonist does not re-litigate their commitment every
+  // tick; they re-decide when something happens" — the *something* has to actually bear on the
+  // commitment. This is a read of EXISTING signals (wasInterruption, resumeFromSuspension,
+  // currentGoal.status) — not a new re-decision trigger; the closed six-trigger list is
+  // unchanged, this only gates whether an already-detected trigger is acted on for THIS goal.
+  if (!resumeFromSuspension && !wasInterruption && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
+    return finish(
+      { clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng, deprivationBaselines, stressBaseline },
+      events,
+    );
+  }
+
+  // --- Phase: decision (only reached when re-decision is actually warranted) ---
   let prng = state.prng;
 
   if (resumeFromSuspension && colonist.suspendedGoal !== null && suspendedExecution !== null) {
@@ -437,18 +491,8 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     }
   }
 
-  return {
-    state: {
-      clock,
-      world,
-      policy: state.policy,
-      colonist,
-      execution,
-      suspendedExecution,
-      prng,
-      deprivationBaselines,
-      stressBaseline,
-    },
+  return finish(
+    { clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng, deprivationBaselines, stressBaseline },
     events,
-  };
+  );
 }
