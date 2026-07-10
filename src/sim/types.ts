@@ -104,3 +104,68 @@ export type SimDuration = number;
 
 /** An absolute point in simulated time (seconds since epoch of the run). */
 export type SimTime = number;
+
+// --- M5 Colonist State data shapes -----------------------------------------
+// M5 owns data residence and invariants; the attached systems (M6-M11) own
+// the rules that change it. [engineering-specification.md §2 M5]
+
+/** Level in [0, 100] per need, 100 = fully satisfied. */
+export type NeedLevels = Record<NeedKind, number>;
+
+export interface StressState {
+  level: number;
+  /** Last-tick per-source contribution — the traceability record. [decision-loop.md §7] */
+  attribution: Partial<Record<StressSource, number>>;
+}
+
+export type GoalStatus = "active" | "suspended" | "blocked" | "queued";
+
+export interface GoalStackEntry {
+  readonly id: string;
+  readonly source: GoalSource;
+  readonly tier: PriorityTier;
+  /** Recorded at adoption — "adopted because...". [decision-loop.md §11] */
+  readonly motivation: string;
+  taskId: string | undefined;
+  status: GoalStatus;
+  readonly createdAt: SimTime;
+}
+
+export type DiscoveryState = "unknown" | "observed" | "confirmed";
+
+export interface TraitInstance {
+  readonly traitId: string;
+  readonly category: TraitCategory;
+  discovery: DiscoveryState;
+}
+
+export type MemoryImpact = "low" | "medium" | "high";
+
+export interface MemoryEntry {
+  readonly id: string;
+  readonly type: MemoryType;
+  readonly formedAt: SimTime;
+  readonly impact: MemoryImpact;
+  readonly description: string;
+  /** Match keys, per type — used by M9's match-and-tilt queries. [decision-loop.md §8] */
+  readonly personId?: string;
+  readonly needKind?: NeedKind;
+  readonly situationKind?: string;
+}
+
+export interface ColonistIdentity {
+  readonly id: string;
+  readonly name: string;
+  /** Immutable after arrival. [colonist-agent-model.md] */
+  readonly skills: readonly string[];
+}
+
+export interface ColonistState {
+  readonly identity: ColonistIdentity;
+  needs: NeedLevels;
+  stress: StressState;
+  observableState: ObservableState;
+  goalStack: GoalStackEntry[];
+  traits: TraitInstance[];
+  memoryPool: MemoryEntry[];
+}
