@@ -169,3 +169,65 @@ export interface ColonistState {
   traits: TraitInstance[];
   memoryPool: MemoryEntry[];
 }
+
+// --- M2 World State data shapes ---------------------------------------------
+
+/** Five-state module health classification — closed. [ADR-13] */
+export type HealthState = "nominal" | "stressed" | "warning" | "critical" | "failing";
+
+export type ModuleKind = "food-station" | "rest-area" | "workstation";
+
+export interface ModuleState {
+  readonly id: string;
+  readonly kind: ModuleKind;
+  health: HealthState;
+  /** Derived from health, but tracked explicitly — a Failing module may still be partially usable in richer worlds. */
+  functional: boolean;
+  readonly capacity: number;
+  occupancy: number;
+  /** Only meaningful for resource-bearing modules (e.g. food-station). */
+  resourceStock?: number;
+}
+
+/** Station-wide survival conditions — Tier 1 sources, trait-immune. [ADR-01] */
+export type SurvivalCondition = "depressurization" | "oxygen-failure";
+
+// --- M3 Policy System data shapes -------------------------------------------
+
+/** ADR-01 Tier 1 shift skeleton periods. */
+export type ShiftPeriod = "work" | "free" | "rest";
+
+export interface Policy {
+  /** Which module this colonist is assigned to work during the work period. */
+  readonly assignedWorkstationId: string;
+}
+
+// --- M4 Snapshot Service data shapes -----------------------------------------
+
+export interface ModuleCondition {
+  readonly id: string;
+  readonly kind: ModuleKind;
+  readonly health: HealthState;
+  readonly functional: boolean;
+  readonly hasCapacity: boolean;
+  readonly hasResource: boolean;
+}
+
+/** Nearby colonists: Tier-1 observable facts only — never internals. [locked #21] */
+export interface ObservedColonist {
+  readonly id: string;
+  readonly state: ObservableState;
+}
+
+/**
+ * The fixed, per-decision world snapshot. Transient — never persisted,
+ * discarded after the decision. [decision-loop.md §1b]
+ */
+export interface WorldSnapshot {
+  readonly time: SimTime;
+  readonly shiftPeriod: ShiftPeriod;
+  readonly assignedWorkstationId: string;
+  readonly moduleConditions: readonly ModuleCondition[];
+  readonly survivalConditions: readonly SurvivalCondition[];
+  readonly nearbyColonists: readonly ObservedColonist[];
+}

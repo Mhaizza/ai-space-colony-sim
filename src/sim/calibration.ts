@@ -103,3 +103,13 @@ export const MEMORY_CALIBRATION = {
 
 /** Goal stack depth bound. [decision-loop.md DQ-D8] */
 export const GOAL_STACK_MAX_DEPTH = 5;
+
+/**
+ * Shift skeleton calibration (ADR-01 Tier 1). Three contiguous fractions of
+ * the simulated day, summing to 1 — no wraparound edge case since the rest
+ * period ends exactly at the day boundary.
+ */
+export const SHIFT_CALIBRATION = {
+  workEndFraction: 0.45,
+  freeEndFraction: 0.6,
+} as const;
