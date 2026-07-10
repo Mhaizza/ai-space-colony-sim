@@ -231,3 +231,21 @@ export interface WorldSnapshot {
   readonly survivalConditions: readonly SurvivalCondition[];
   readonly nearbyColonists: readonly ObservedColonist[];
 }
+
+// --- M11 Decision System data shapes ----------------------------------------
+
+/** A candidate goal, generated from one of the five closed sources. [decision-loop.md §2 "Generate"] */
+export interface GoalCandidate {
+  readonly id: string;
+  readonly source: GoalSource;
+  readonly tier: PriorityTier;
+  readonly needKind?: NeedKind;
+  readonly survivalCondition?: SurvivalCondition;
+}
+
+/** A goal resolved to a concrete, located task. [decision-loop.md §5] */
+export interface ResolvedTask {
+  readonly taskId: string;
+  readonly moduleId: string;
+  readonly taskClass: TaskClass;
+}
