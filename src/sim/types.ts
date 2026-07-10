@@ -114,8 +114,8 @@ export type NeedLevels = Record<NeedKind, number>;
 
 export interface StressState {
   level: number;
-  /** Last-tick per-source contribution — the traceability record. [decision-loop.md §7] */
-  attribution: Partial<Record<StressSource, number>>;
+  /** Last-tick per-source/relief contribution — the traceability record. [decision-loop.md §7] */
+  attribution: Partial<Record<StressSource | StressRelief, number>>;
 }
 
 export type GoalStatus = "active" | "suspended" | "blocked" | "queued";
