@@ -14,6 +14,7 @@ import { run } from "./run.js";
 import { commitGoal, suspendGoal } from "../decision/goals.js";
 import { beginExecution, interruptExecution } from "../task/execution.js";
 import { taskDefinition } from "../task/tasks.js";
+import { createDecisionLog, createEventLog } from "../records/logs.js";
 
 const policy = createDefaultPolicy();
 
@@ -32,6 +33,8 @@ function stateAtTickOfDay(
     suspendedExecution: null,
     prng: createPrng(seed),
     ...createFreshMemoryBaselines(),
+    eventLog: createEventLog(),
+    decisionLog: createDecisionLog(),
   };
 }
 
@@ -205,6 +208,8 @@ describe("goal interruption and resume — preserved execution progress (review 
       suspendedExecution,
       prng: createPrng(1),
       ...createFreshMemoryBaselines(),
+      eventLog: createEventLog(),
+      decisionLog: createDecisionLog(),
     };
 
     const result = tick(state, 1);
@@ -265,6 +270,8 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       suspendedExecution: voluntaryExecution,
       prng: createPrng(1),
       ...createFreshMemoryBaselines(),
+      eventLog: createEventLog(),
+      decisionLog: createDecisionLog(),
     };
 
     const result = tick(state, 1);
@@ -665,6 +672,8 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       suspendedExecution: voluntaryExec,
       prng: createPrng(1),
       ...createFreshMemoryBaselines(),
+      eventLog: createEventLog(),
+      decisionLog: createDecisionLog(),
     };
     validateSimulationState(overflowState); // the hand-built precondition is itself valid
     const overflowResult = tick(overflowState, 1);

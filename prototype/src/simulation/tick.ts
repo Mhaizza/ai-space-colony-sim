@@ -56,6 +56,7 @@ import {
   resumeExecution,
   type Execution,
 } from "../task/execution.js";
+import { appendDecisionsFromEvents, appendEvents, type DecisionLog, type EventLog } from "../records/logs.js";
 
 /**
  * The complete, explicit simulation state — everything tick() reads or writes across calls.
@@ -86,6 +87,13 @@ export interface SimulationState {
    */
   readonly deprivationBaselines: Readonly<Record<NeedId, number>>;
   readonly stressBaseline: number;
+  /**
+   * Append-only behavior trace (Build Step 9). Record SEMANTICS (types, append rules, trace
+   * reconstruction) belong entirely to records/logs.ts — this module only calls into it with
+   * events it already produced (finish()'s job below), never constructs a record itself.
+   */
+  readonly eventLog: EventLog;
+  readonly decisionLog: DecisionLog;
 }
 
 /** One tick's trace — the "stable replay log": what was detected, decided, resolved, executed. */
@@ -149,10 +157,20 @@ export function validateSimulationState(state: SimulationState): void {
   }
 }
 
-/** Validates the outgoing state before returning it — every tick() exit point goes through here. */
+/**
+ * Validates the outgoing state before returning it — every tick() exit point goes through here.
+ * Also the one place this tick's events are committed to the append-only logs (Build Step 9):
+ * `state.eventLog`/`state.decisionLog` passed in are the PRIOR logs, unappended — this appends
+ * `events` on top via logs.ts (which owns what a record is), keyed to `state.clock.tick`.
+ */
 function finish(state: SimulationState, events: readonly TickEvent[]): TickResult {
-  validateSimulationState(state);
-  return { state, events };
+  const withLogs: SimulationState = {
+    ...state,
+    eventLog: appendEvents(state.eventLog, state.clock.tick, events),
+    decisionLog: appendDecisionsFromEvents(state.decisionLog, state.clock.tick, events),
+  };
+  validateSimulationState(withLogs);
+  return { state: withLogs, events };
 }
 
 /** Fresh memory-formation baselines for a newly arrived colonist: needs at 1 (matches createNeeds), stress at 0 (matches createStress). */
@@ -438,7 +456,10 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
 
   if (!triggered) {
     return finish(
-      { clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng, deprivationBaselines, stressBaseline },
+      {
+        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
+        deprivationBaselines, stressBaseline, eventLog: state.eventLog, decisionLog: state.decisionLog,
+      },
       events,
     );
   }
@@ -456,7 +477,10 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // unchanged, this only gates whether an already-detected trigger is acted on for THIS goal.
   if (!resumeFromSuspension && !wasInterruption && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
     return finish(
-      { clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng, deprivationBaselines, stressBaseline },
+      {
+        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
+        deprivationBaselines, stressBaseline, eventLog: state.eventLog, decisionLog: state.decisionLog,
+      },
       events,
     );
   }
@@ -492,7 +516,10 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   }
 
   return finish(
-    { clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng, deprivationBaselines, stressBaseline },
+    {
+      clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
+      deprivationBaselines, stressBaseline, eventLog: state.eventLog, decisionLog: state.decisionLog,
+    },
     events,
   );
 }

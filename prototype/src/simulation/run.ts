@@ -14,6 +14,7 @@ import { createColonist } from "../colonist/colonist.js";
 import type { TraitId } from "../colonist/traits.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld } from "../world/world.js";
+import { createDecisionLog, createEventLog } from "../records/logs.js";
 import { createFreshMemoryBaselines, tick, type SimulationState, type TickEvent } from "./tick.js";
 
 /** Creates a fresh Stage 1 simulation: default station, default policy, one colonist, seeded PRNG. */
@@ -33,6 +34,8 @@ export function createInitialState(
     suspendedExecution: null,
     prng: createPrng(seed),
     ...createFreshMemoryBaselines(),
+    eventLog: createEventLog(),
+    decisionLog: createDecisionLog(),
   };
 }
 
