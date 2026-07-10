@@ -129,6 +129,9 @@ export interface GoalStackEntry {
   taskId: string | undefined;
   status: GoalStatus;
   readonly createdAt: SimTime;
+  /** Carried from the originating candidate — completion detection reads these directly rather than re-parsing the id. */
+  readonly needKind?: NeedKind;
+  readonly survivalCondition?: SurvivalCondition;
 }
 
 export type DiscoveryState = "unknown" | "observed" | "confirmed";

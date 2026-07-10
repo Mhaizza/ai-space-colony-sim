@@ -254,6 +254,8 @@ function commit(
     taskId: task.taskId,
     status: "active",
     createdAt: now,
+    ...(candidate.needKind !== undefined ? { needKind: candidate.needKind } : {}),
+    ...(candidate.survivalCondition !== undefined ? { survivalCondition: candidate.survivalCondition } : {}),
   };
   colonist.goalStack.push(goal);
   pruneGoalStack(colonist);
