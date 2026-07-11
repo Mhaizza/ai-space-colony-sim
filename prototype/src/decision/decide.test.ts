@@ -5,12 +5,13 @@
 import { describe, expect, it } from "vitest";
 import { advance, createClock } from "../core/clock.js";
 import { createPrng, next } from "../core/prng.js";
-import { createColonist, withStress } from "../colonist/colonist.js";
+import { createColonist, withNeeds, withStress } from "../colonist/colonist.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional, consumeFood } from "../world/world.js";
 import { buildSnapshot, type WorldSnapshot } from "../world/snapshot.js";
 import type { GoalCandidate } from "./goals.js";
-import { decideFromCandidates } from "./decide.js";
+import { decideFromCandidates, decideNext } from "./decide.js";
+import { createNeeds } from "../colonist/needs.js";
 
 const survival: GoalCandidate = { source: "survivalCondition", tier: 1, key: "survivalCondition:z", baseUrgency: 999 };
 const survival2: GoalCandidate = { source: "survivalCondition", tier: 1, key: "survivalCondition:a", baseUrgency: 1 };
@@ -261,6 +262,25 @@ describe("not per-tick — idempotent under repeated invocation with unchanged i
     const third = decideFromCandidates([lowA, lowB], colonist, seed, 10, workSnapshot);
     expect(first).toEqual(second);
     expect(second).toEqual(third);
+  });
+});
+
+describe("decideNext forwards the colonist's traits to candidate generation (Copilot-confirmed defect)", () => {
+  it("a trait-shifted threshold changes which candidates are even generated, not just how they're weighed", () => {
+    // "driven" shifts Rest's low threshold down by 0.05 (more tolerant). At level 0.32: the
+    // UNTRAITED threshold (0.35) reads this as low (would generate lowNeed:rest, tier 4,
+    // which — being actionable and higher-priority than voluntary — would win outright); the
+    // TRAITED threshold (0.30) reads it as NOT low. If decideNext drops traits when generating
+    // candidates, it wrongly adopts lowNeed:rest; forwarding traits correctly falls through to
+    // the only other candidate available during free time: voluntary.
+    const drivenColonist = withNeeds(createColonist("c2", "Rei", [], ["driven"]), {
+      ...createNeeds(),
+      rest: { level: 0.32, ticksBelowLow: 0 },
+    });
+    const freeSnapshot = buildSnapshot(advance(createClock(), 960), createDefaultPolicy(), createWorld()); // free period start
+    const outcome = decideNext(drivenColonist, freeSnapshot, seed, 0);
+    expect(outcome.kind).toBe("commit");
+    if (outcome.kind === "commit") expect(outcome.goal.source).toBe("voluntary");
   });
 });
 

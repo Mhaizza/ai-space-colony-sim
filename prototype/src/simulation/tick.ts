@@ -30,7 +30,7 @@ import type { ColonistState } from "../colonist/colonist.js";
 import { withCurrentGoal, withMemory, withNeeds, withStress, withSuspendedGoal } from "../colonist/colonist.js";
 import { decayNeeds, isCritical, isLow, isSatisfied } from "../colonist/needs.js";
 import { considerConditionFormation, considerDeprivationFormation } from "../colonist/memory.js";
-import { evaluateStress } from "../colonist/stress.js";
+import { evaluateStress, type StressContribution } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { ShiftPeriod, ShiftPolicy } from "../world/policy.js";
 import { periodAt } from "../world/policy.js";
@@ -122,7 +122,8 @@ export type TickEvent =
   | { readonly kind: "executionResumed"; readonly taskId: TaskId; readonly goalKey: string; readonly elapsedTicks: number }
   | { readonly kind: "decision"; readonly outcome: DecisionOutcome }
   | { readonly kind: "taskResolution"; readonly resolution: TaskResolution }
-  | { readonly kind: "memoryFormed"; readonly memoryType: "deprivation" | "condition"; readonly needId?: NeedId };
+  | { readonly kind: "memoryFormed"; readonly memoryType: "deprivation" | "condition"; readonly needId?: NeedId }
+  | { readonly kind: "stressEvaluated"; readonly contributions: readonly StressContribution[] };
 
 export interface TickResult {
   readonly state: SimulationState;
@@ -338,8 +339,17 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   events.push(...detectNeedThresholdCrossings(needsBefore, decayedNeeds, traits));
 
   const stressBefore = state.colonist.stress;
-  const stressResult = evaluateStress(stressBefore, decayedNeeds, deltaTicks);
+  const isWorking = state.execution !== null && state.execution.status === "inProgress" && state.execution.taskId === "workAtWorkstation";
+  const stressResult = evaluateStress(stressBefore, decayedNeeds, deltaTicks, traits, isWorking);
   let colonist = withStress(withNeeds(state.colonist, decayedNeeds), stressResult.state);
+  // Retained, not discarded (Copilot-confirmed defect): decision-loop.md:192's hard
+  // traceability requirement is "every stress movement must be decomposable into its sources in
+  // the inspector" — evaluateStress already computes that decomposition every call, but it was
+  // previously thrown away the instant this function returned. Logged only when something
+  // actually moved, not on every static tick, to keep the trace meaningfully sized.
+  if (stressResult.contributions.some((c) => c.rawDelta !== 0)) {
+    events.push({ kind: "stressEvaluated", contributions: stressResult.contributions });
+  }
   let world = state.world;
   let execution = state.execution;
   let suspendedExecution = state.suspendedExecution;
@@ -349,7 +359,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     const progressed = progressExecution(execution, deltaTicks);
     events.push({ kind: "executionProgressed", taskId: progressed.taskId, elapsedTicks: progressed.elapsedTicks });
 
-    const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks);
+    const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks, traits);
     if (consequences.needs !== undefined) colonist = withNeeds(colonist, consequences.needs);
     if (consequences.world !== undefined) world = consequences.world;
 

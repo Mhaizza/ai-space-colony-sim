@@ -20,7 +20,7 @@ import type { ModuleState, WorldState } from "../world/world.js";
 import type { ColonistIdentity, ColonistState } from "../colonist/colonist.js";
 import type { NeedsState, NeedTrack } from "../colonist/needs.js";
 import type { MemoryEntry, MemoryPool } from "../colonist/memory.js";
-import type { StressState } from "../colonist/stress.js";
+import type { StressChannelId, StressContribution, StressState } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { WeightTiltContribution } from "../colonist/traits.js";
 import type { Goal, GoalStatus } from "../decision/goals.js";
@@ -43,6 +43,13 @@ const TASK_IDS: readonly TaskId[] = ["workAtWorkstation", "eatAtFoodStation", "r
 const SHIFT_PERIODS: readonly ShiftPeriod[] = ["work", "rest", "free"];
 const TRAIT_IDS: readonly TraitId[] = ["driven"];
 const STRESS_CHANNELS: readonly StressChannel[] = ["reliefBoost", "demandSuppress"];
+const STRESS_CHANNEL_IDS: readonly StressChannelId[] = [
+  "psychNeedDeprivation",
+  "biologicalStrain",
+  "overwork",
+  "restAdequacy",
+  "needsSatisfied",
+];
 const MEMORY_FORMED_TYPES = ["deprivation", "condition"] as const;
 
 function fail(reason: string): never {
@@ -354,6 +361,14 @@ function readDecisionOutcome(raw: unknown, field: string): DecisionOutcome {
 // --- TickEvent — one structural validator per closed union variant (tick.ts owns the union
 // itself; this only checks that a saved event has the shape its own `kind` promises). ---
 
+function readStressContribution(raw: unknown, field: string): StressContribution {
+  const o = expectObject(raw, field);
+  return {
+    id: expectOneOf(o.id, STRESS_CHANNEL_IDS, `${field}.id`),
+    rawDelta: expectNumber(o.rawDelta, `${field}.rawDelta`),
+  };
+}
+
 function readTickEvent(raw: unknown, field: string): TickEvent {
   const o = expectObject(raw, field);
   const kind = expectString(o.kind, `${field}.kind`);
@@ -439,6 +454,13 @@ function readTickEvent(raw: unknown, field: string): TickEvent {
         kind: "memoryFormed",
         memoryType: expectOneOf(o.memoryType, MEMORY_FORMED_TYPES, `${field}.memoryType`),
         needId: o.needId === undefined ? undefined : expectOneOf(o.needId, NEEDS, `${field}.needId`),
+      };
+    case "stressEvaluated":
+      return {
+        kind: "stressEvaluated",
+        contributions: expectArray(o.contributions, `${field}.contributions`).map((c, i) =>
+          readStressContribution(c, `${field}.contributions[${i}]`),
+        ),
       };
     default:
       return fail(`"${field}.kind" has unrecognized value "${kind}"`);

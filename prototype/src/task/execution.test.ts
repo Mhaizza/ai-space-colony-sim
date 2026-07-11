@@ -2,8 +2,9 @@
 // consequence application, deterministic execution, purity, immutability.
 
 import { describe, expect, it } from "vitest";
+import { TASK_TUNING } from "../config/tuning.js";
 import { createNeeds, isSatisfied } from "../colonist/needs.js";
-import { createWorld } from "../world/world.js";
+import { createWorld, consumeFood } from "../world/world.js";
 import { commitGoal, type Goal } from "../decision/goals.js";
 import { taskDefinition } from "./tasks.js";
 import {
@@ -131,6 +132,44 @@ describe("owned consequences — no world mutation beyond the task's own effect"
     const world = createWorld();
     const result = applyProgressConsequences("eatAtFoodStation", needs, world, 1_000_000);
     expect(result.world!.foodStock).toBe(0);
+  });
+
+  it("REGRESSION (Copilot-confirmed): hunger restoration scales to the food actually consumed, not the full tick span, once stock is exhausted mid-span", () => {
+    const needs = { ...createNeeds(), hunger: { level: 0.3, ticksBelowLow: 500 } };
+    const deltaTicks = 10; // small enough that full restoration stays well under the [0,1] ceiling
+    const fullConsumption = TASK_TUNING.foodConsumptionPerTick * deltaTicks;
+
+    // Case 1: plenty of stock — full restoration for the full span.
+    const wellStocked = createWorld();
+    const fullResult = applyProgressConsequences("eatAtFoodStation", needs, wellStocked, deltaTicks);
+
+    // Case 2: only HALF the food this span would need is left in stock.
+    const halfStock = consumeFood(wellStocked, wellStocked.foodStock - fullConsumption / 2);
+    const halfResult = applyProgressConsequences("eatAtFoodStation", needs, halfStock, deltaTicks);
+    const fullRestoreAmount = fullResult.needs!.hunger.level - needs.hunger.level;
+    const halfRestoreAmount = halfResult.needs!.hunger.level - needs.hunger.level;
+    expect(halfRestoreAmount).toBeCloseTo(fullRestoreAmount / 2, 10);
+
+    // Case 3: NO food left at all — the defect's sharpest case: the old code granted a full
+    // tick span's restoration even at zero consumption; the fix must grant none.
+    const emptyStock = consumeFood(wellStocked, wellStocked.foodStock);
+    const emptyResult = applyProgressConsequences("eatAtFoodStation", needs, emptyStock, deltaTicks);
+    expect(emptyResult.needs!.hunger.level).toBe(needs.hunger.level); // unchanged — no free restoration
+    expect(emptyResult.world!.foodStock).toBe(0);
+  });
+
+  it("REGRESSION (Copilot-confirmed): threads the colonist's traits through so ticksBelowLow retracks against the trait-shifted threshold, not the default one", () => {
+    // "driven" shifts Rest's low threshold down by 0.05 (default 0.35 -> 0.30). Restoring rest
+    // to 0.32 sits ABOVE the trait-shifted threshold (no longer low) but BELOW the default one
+    // (still low, if traits are silently dropped) — the two callers must agree.
+    const needs = { ...createNeeds(), rest: { level: 0.28, ticksBelowLow: 500 } };
+    const world = createWorld();
+    // Enough ticks to cross 0.28 -> ~0.32 at restorePerTick=0.004 (needs 1 tick's worth of headroom).
+    const untraited = applyProgressConsequences("restAtBunk", needs, world, 10, []);
+    const driven = applyProgressConsequences("restAtBunk", needs, world, 10, ["driven"]);
+    expect(untraited.needs!.rest.level).toBe(driven.needs!.rest.level); // same restoration amount either way
+    expect(untraited.needs!.rest.ticksBelowLow).toBeGreaterThan(0); // untraited: still reads as low -> counter keeps running
+    expect(driven.needs!.rest.ticksBelowLow).toBe(0); // driven: correctly reads as no-longer-low -> counter resets
   });
 
   it("resting restores rest and touches no world state", () => {

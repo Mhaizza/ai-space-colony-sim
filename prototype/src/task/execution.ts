@@ -13,10 +13,11 @@
 // application returns updated needs/world only, for a later pipeline stage (not built yet) to
 // hand to memory.ts's formation functions.
 
-import { TASK_TUNING } from "../config/tuning.js";
-import { restoreNeed, type NeedsState } from "../colonist/needs.js";
+import { NEED_TUNING, TASK_TUNING } from "../config/tuning.js";
+import { restoreNeed, restoreNeedByAmount, type NeedsState } from "../colonist/needs.js";
 import { consumeFood, type WorldState } from "../world/world.js";
 import type { Goal } from "../decision/goals.js";
+import type { TraitId } from "../colonist/traits.js";
 import type { TaskDefinition, TaskId } from "./tasks.js";
 
 export type ExecutionStatus = "inProgress" | "interrupted" | "completed" | "aborted";
@@ -95,23 +96,39 @@ export interface ExecutionConsequences {
  * Pure: returns new needs/world state, never mutates inputs. This is the only function in the
  * task/execution layer that writes to NeedsState or WorldState — resolveTask (tasks.ts) only
  * ever reads through WorldSnapshot.
+ *
+ * `traits` is threaded into every restoration call so ADR-17 D7's trait-shifted threshold
+ * applies consistently here too (Copilot-confirmed defect: restoreNeed was previously called
+ * with no traits at all, so a "driven" colonist's Rest low-threshold shift was honored by need
+ * generation and stress evaluation but silently ignored by consequence application — leaving
+ * `ticksBelowLow` retracked against the wrong threshold and the Rest amplifier able to stay
+ * engaged past the point the colonist's own trait-shifted threshold says they're no longer low).
  */
 export function applyProgressConsequences(
   taskId: TaskId,
   needs: NeedsState,
   world: WorldState,
   deltaTicks: number,
+  traits: readonly TraitId[] = [],
 ): ExecutionConsequences {
   switch (taskId) {
     case "eatAtFoodStation": {
-      const consumed = Math.min(world.foodStock, TASK_TUNING.foodConsumptionPerTick * deltaTicks);
+      // Restoration is scaled to the food ACTUALLY consumed, not to the full tick span
+      // regardless of stock (Copilot-confirmed defect: previously, once stock ran out mid-span,
+      // consumption correctly capped at the remaining stock but restoration still applied the
+      // full `deltaTicks` worth — including a full restoration for zero food once stock hit
+      // zero). `restorationFraction` is exactly the proportion of a full tick's consumption
+      // this span could actually afford.
+      const fullConsumption = TASK_TUNING.foodConsumptionPerTick * deltaTicks;
+      const consumed = Math.min(world.foodStock, fullConsumption);
+      const restorationFraction = fullConsumption > 0 ? consumed / fullConsumption : 0;
       return {
-        needs: restoreNeed(needs, "hunger", deltaTicks),
+        needs: restoreNeedByAmount(needs, "hunger", NEED_TUNING.hunger.restorePerTick * deltaTicks * restorationFraction, traits),
         world: consumeFood(world, consumed),
       };
     }
     case "restAtBunk":
-      return { needs: restoreNeed(needs, "rest", deltaTicks) };
+      return { needs: restoreNeed(needs, "rest", deltaTicks, traits) };
     case "workAtWorkstation":
     case "idlePresence":
       return {};

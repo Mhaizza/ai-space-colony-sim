@@ -2,23 +2,33 @@
 // engineering specification). Emergent, not a need (needs-system P7): no satisfaction action,
 // accumulates from sources, dissipates through reliefs, always source-attributed. Pure.
 //
-// Stage 1 sources/reliefs are exactly the ones computable from local colonist inputs (needs
-// only — no world, policy, or execution module exists yet):
+// Stage 1 sources/reliefs realized here — a subset of decision-loop §7's full six-source,
+// four-relief list:
 //   sources: sustained unmet psychological needs; sustained biological strain (any need below
 //     its low threshold, including critical — priority override and stress accumulation are
-//     separate concerns, per architecture review correction 2026-07-10)
+//     separate concerns, per architecture review correction 2026-07-10); overwork (the
+//     colonist is currently executing the shift-assignment task — M12's execution status,
+//     threaded in as `isWorking` by tick.ts, the only caller with that information)
 //   reliefs: rest adequacy; needs satisfied across the board
-// Overwork (needs an "is working" signal from M12) and stable-conditions relief (needs M2
-// world state) are decision-loop §7 sources/reliefs this module does NOT yet compute — there
-// is no local input to compute them from. They join when their owning modules exist; this is
-// a scope boundary, not an omission to silently paper over.
+// Stable-conditions relief remains unbuilt: it needs a "how long has this module/environment
+// been stable" duration signal M2 does not track in Stage 1's static station (module health is
+// a binary functional/not flag with no history) — a genuine scope boundary, not an omission to
+// silently paper over. Hostile/positive-proximity sources belong to M10 (relationships),
+// explicitly out of Stage 1 (AQ-2 blocks M10 entirely).
+//
+// `traits` (ADR-17 D7) is threaded through every isLow call here for the same reason M6/M11
+// thread it: a trait-shifted low threshold must be honored consistently everywhere a need's
+// "low" status is read, or a need can register as low for stress purposes while decision
+// generation (which does thread traits) reads the same level as not-low — an inconsistency
+// Copilot's review caught directly.
 
 import { PSYCHOLOGICAL_NEEDS, type NeedId } from "../config/constants.js";
 import { STRESS_TUNING } from "../config/tuning.js";
 import { isBiological, isLow, isSatisfied, type NeedsState } from "./needs.js";
+import type { TraitId } from "./traits.js";
 
 /** Stress sources and reliefs realized at this build step — a subset of decision-loop §7's full list. */
-export type StressChannelId = "psychNeedDeprivation" | "biologicalStrain" | "restAdequacy" | "needsSatisfied";
+export type StressChannelId = "psychNeedDeprivation" | "biologicalStrain" | "overwork" | "restAdequacy" | "needsSatisfied";
 
 /** Stress level only — 0 (none) to 1 (maximal). Attribution is returned per call, not stored (S2 owns retention). */
 export interface StressState {
@@ -46,7 +56,7 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
-function countLowPsychological(needs: NeedsState): number {
+function countLowPsychological(needs: NeedsState, traits: readonly TraitId[]): number {
   // Prototype Stage 1 provisional aggregation strategy: scaling linearly with the count of
   // low psychological needs is one way to represent "sustained unmet psychological needs"
   // (decision-loop §7) as a single source, not an architectural commitment to linear scaling.
@@ -54,12 +64,12 @@ function countLowPsychological(needs: NeedsState): number {
   // is the simplest that could be built first and is free to change without an ADR.
   let count = 0;
   for (const id of PSYCHOLOGICAL_NEEDS) {
-    if (isLow(id, needs[id].level)) count++;
+    if (isLow(id, needs[id].level, traits)) count++;
   }
   return count;
 }
 
-function countBiologicalStrain(needs: NeedsState): number {
+function countBiologicalStrain(needs: NeedsState, traits: readonly TraitId[]): number {
   // "Strain" per decision-loop §7: any biological need below its low threshold contributes —
   // low and critical are NOT mutually exclusive stress inputs. Priority override (ADR-01
   // tier 2 — the colonist abandons their post) and stress accumulation (this module) are
@@ -70,31 +80,40 @@ function countBiologicalStrain(needs: NeedsState): number {
   // severity later without changing this module's structure.
   let count = 0;
   for (const id of Object.keys(needs) as NeedId[]) {
-    if (isBiological(id) && isLow(id, needs[id].level)) count++;
+    if (isBiological(id) && isLow(id, needs[id].level, traits)) count++;
   }
   return count;
 }
 
 /**
- * Evaluates stress for one tick span from need state alone. Pure: same inputs, same result.
- * `ticks` must be a non-negative integer count of elapsed in-game ticks.
+ * Evaluates stress for one tick span from need state, plus whether the colonist is currently
+ * executing the shift-assignment task (overwork's only local signal — tick.ts is the only
+ * caller with M12 execution status, so it is the only caller that can supply this). Pure: same
+ * inputs, same result. `ticks` must be a non-negative integer count of elapsed in-game ticks.
  * Every channel is always represented in `contributions`, zero-valued when inactive, so a
  * caller can show "no rest relief this tick" as explicitly as "rest relief: -0.0008" —
  * decomposability is a property of the return shape, not something callers must reconstruct.
  */
-export function evaluateStress(state: StressState, needs: NeedsState, ticks: number): StressUpdateResult {
+export function evaluateStress(
+  state: StressState,
+  needs: NeedsState,
+  ticks: number,
+  traits: readonly TraitId[] = [],
+  isWorking = false,
+): StressUpdateResult {
   if (!Number.isInteger(ticks) || ticks < 0) {
     throw new Error(`evaluateStress ticks must be a non-negative integer, got ${ticks}`);
   }
 
-  const psychLowCount = countLowPsychological(needs);
-  const bioStrainCount = countBiologicalStrain(needs);
+  const psychLowCount = countLowPsychological(needs, traits);
+  const bioStrainCount = countBiologicalStrain(needs, traits);
   const restAdequate = isSatisfied("rest", needs.rest.level);
   const allSatisfied = (Object.keys(needs) as NeedId[]).every((id) => isSatisfied(id, needs[id].level));
 
   const contributions: StressContribution[] = [
     { id: "psychNeedDeprivation", rawDelta: STRESS_TUNING.psychNeedPerTick * ticks * psychLowCount },
     { id: "biologicalStrain", rawDelta: STRESS_TUNING.bioStrainPerTick * ticks * bioStrainCount },
+    { id: "overwork", rawDelta: isWorking ? STRESS_TUNING.overworkPerTick * ticks : 0 },
     { id: "restAdequacy", rawDelta: restAdequate ? -STRESS_TUNING.restReliefPerTick * ticks : 0 },
     { id: "needsSatisfied", rawDelta: allSatisfied ? -STRESS_TUNING.satisfiedReliefPerTick * ticks : 0 },
   ];

@@ -122,6 +122,19 @@ describe("accumulation — sustained biological strain (low, not critical)", () 
     const c = result.contributions.find((x) => x.id === "biologicalStrain")!;
     expect(c.rawDelta).toBe(0);
   });
+
+  it("REGRESSION (Copilot-confirmed): honors a trait-shifted low threshold, consistent with M6/decision generation", () => {
+    // "driven" shifts Rest's low threshold down by 0.05 (default 0.35 -> 0.30). At level 0.32:
+    // untraited reads this as low (0.32 < 0.35); traited reads it as NOT low (0.32 >= 0.30).
+    // Before the fix, evaluateStress always used the untraited threshold, so a driven
+    // colonist accrued biologicalStrain stress for a level M6/decision generation had already
+    // stopped treating as deprived — an inconsistency between systems reading the same fact.
+    const needs = { ...fullySatisfied(), rest: { level: 0.32, ticksBelowLow: 0 } };
+    const untraited = evaluateStress(createStress(), needs, 100, []);
+    const driven = evaluateStress(createStress(), needs, 100, ["driven"]);
+    expect(untraited.contributions.find((c) => c.id === "biologicalStrain")!.rawDelta).toBeGreaterThan(0);
+    expect(driven.contributions.find((c) => c.id === "biologicalStrain")!.rawDelta).toBe(0);
+  });
 });
 
 describe("dissipation — rest adequacy and needs satisfied", () => {
@@ -176,10 +189,24 @@ describe("clamping", () => {
 });
 
 describe("attribution — every channel always present, decomposable", () => {
-  it("always returns all four channels, even when their contribution is zero", () => {
+  it("always returns all five channels, even when their contribution is zero", () => {
     const result = evaluateStress(createStress(), fullySatisfied(), 100);
     const ids = result.contributions.map((c) => c.id).sort();
-    expect(ids).toEqual(["biologicalStrain", "needsSatisfied", "psychNeedDeprivation", "restAdequacy"]);
+    expect(ids).toEqual(["biologicalStrain", "needsSatisfied", "overwork", "psychNeedDeprivation", "restAdequacy"]);
+  });
+
+  it("overwork accumulates only while executing the shift-assignment task (isWorking=true)", () => {
+    const idle = evaluateStress(createStress(), fullySatisfied(), 100, [], false);
+    const working = evaluateStress(createStress(), fullySatisfied(), 100, [], true);
+    expect(idle.contributions.find((c) => c.id === "overwork")!.rawDelta).toBe(0);
+    expect(working.contributions.find((c) => c.id === "overwork")!.rawDelta).toBeGreaterThan(0);
+    // Compare from a mid-range starting level so neither result is floor-clamped to 0 — both
+    // reliefs (rest adequacy, needs satisfied) are active in this fixture regardless of
+    // isWorking, so the level difference isolates overwork's own contribution.
+    const start: StressState = { level: 0.5 };
+    const idleFromMid = evaluateStress(start, fullySatisfied(), 100, [], false);
+    const workingFromMid = evaluateStress(start, fullySatisfied(), 100, [], true);
+    expect(workingFromMid.state.level).toBeGreaterThan(idleFromMid.state.level);
   });
 
   it("contributions sum exactly to the applied delta when no clamping occurs", () => {

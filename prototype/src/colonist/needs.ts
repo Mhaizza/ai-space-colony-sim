@@ -87,8 +87,23 @@ export function restoreNeed(state: NeedsState, id: NeedId, ticks: number, traits
   if (!Number.isInteger(ticks) || ticks < 0) {
     throw new Error(`restoreNeed ticks must be a non-negative integer, got ${ticks}`);
   }
+  return restoreNeedByAmount(state, id, NEED_TUNING[id].restorePerTick * ticks, traits);
+}
+
+/**
+ * Restores one need by a direct level amount rather than a tick count at the need's own fixed
+ * rate — for consequences whose restoration is itself scaled by something else already (e.g.
+ * task/execution.ts scaling hunger restoration to the food actually consumed, not the food a
+ * full tick span would have consumed). `amount` may be fractional; `restoreNeed` is defined in
+ * terms of this function, not the other way around, so both paths retrack identically (ADR-17
+ * D7's trait-shifted threshold applies consistently either way).
+ */
+export function restoreNeedByAmount(state: NeedsState, id: NeedId, amount: number, traits: readonly TraitId[] = []): NeedsState {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`restoreNeedByAmount amount must be a non-negative finite number, got ${amount}`);
+  }
   const track = state[id];
-  const level = clamp01(track.level + NEED_TUNING[id].restorePerTick * ticks);
+  const level = clamp01(track.level + amount);
   return { ...state, [id]: retrack(id, level, track.ticksBelowLow, 0, traits) };
 }
 
