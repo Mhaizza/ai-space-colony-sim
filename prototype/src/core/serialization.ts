@@ -93,6 +93,13 @@ function expectPriorityTier(value: unknown, field: string): PriorityTier {
   return n as PriorityTier;
 }
 
+/** A need level's model invariant (colonist/needs.ts NeedTrack doc): bounded [0, 1]. */
+function expectUnitInterval(value: unknown, field: string): number {
+  const n = expectNumber(value, field);
+  if (n < 0 || n > 1) fail(`"${field}" must be in [0, 1], got ${n}`);
+  return n;
+}
+
 function expectInteger(value: unknown, field: string): number {
   const n = expectNumber(value, field);
   if (!Number.isInteger(n)) fail(`"${field}" must be an integer`);
@@ -138,9 +145,13 @@ function readNeeds(raw: unknown): NeedsState {
   const needs = {} as Record<NeedId, NeedTrack>;
   for (const id of NEEDS) {
     const t = expectObject(o[id], `colonist.needs.${id}`);
+    // Copilot-confirmed defect: previously only checked "is a finite number," so impossible
+    // states like level: -10 or a fractional/negative ticksBelowLow passed straight into
+    // continuation/replay. The model's own invariants (needs.ts NeedTrack doc) are enforced
+    // here, the same as every other structural check in this file.
     needs[id] = {
-      level: expectNumber(t.level, `colonist.needs.${id}.level`),
-      ticksBelowLow: expectNumber(t.ticksBelowLow, `colonist.needs.${id}.ticksBelowLow`),
+      level: expectUnitInterval(t.level, `colonist.needs.${id}.level`),
+      ticksBelowLow: expectNonNegativeInteger(t.ticksBelowLow, `colonist.needs.${id}.ticksBelowLow`),
     };
   }
   return needs;
@@ -189,8 +200,12 @@ function readNullableGoal(raw: unknown, field: string): Goal | null {
 function readIdentity(raw: unknown): ColonistIdentity {
   const o = expectObject(raw, "colonist.identity");
   const skills = expectArray(o.skills, "colonist.identity.skills").map((s, i) => expectString(s, `colonist.identity.skills[${i}]`));
+  // Copilot-confirmed defect: this previously cast every saved string to TraitId without
+  // checking membership. A save containing baseTraits: ["unknown"] passed deserialization and
+  // then crashed on the next tick, when TRAITS[traitId] dereferenced an id that was never a
+  // real trait. Validated against TRAIT_IDS like every other closed-set field in this file.
   const baseTraits = expectArray(o.baseTraits, "colonist.identity.baseTraits").map(
-    (t, i) => expectString(t, `colonist.identity.baseTraits[${i}]`) as TraitId,
+    (t, i) => expectOneOf(t, TRAIT_IDS, `colonist.identity.baseTraits[${i}]`),
   );
   return {
     id: expectString(o.id, "colonist.identity.id"),

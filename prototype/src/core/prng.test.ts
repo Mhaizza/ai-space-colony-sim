@@ -48,6 +48,14 @@ describe("prng determinism (spec §8.1–8.2)", () => {
   it("coerces seeds to uint32 deterministically", () => {
     expect(drawSequence(createPrng(-1), 5)).toEqual(drawSequence(createPrng(0xffffffff), 5));
   });
+
+  it("REGRESSION (Copilot-confirmed): rejects non-finite seeds rather than silently aliasing them to seed 0", () => {
+    expect(() => createPrng(NaN)).toThrow();
+    expect(() => createPrng(Infinity)).toThrow();
+    expect(() => createPrng(-Infinity)).toThrow();
+    // Sanity: this is what the old behavior silently did — confirm 0 remains a distinct, valid seed.
+    expect(createPrng(0)).toEqual({ a: 0, draws: 0 });
+  });
 });
 
 describe("prng serialization round-trip (spec §7: PRNG state is mandatory save content)", () => {
@@ -63,5 +71,21 @@ describe("prng serialization round-trip (spec §7: PRNG state is mandatory save 
     expect(() => deserializePrng("{}")).toThrow();
     expect(() => deserializePrng('{"a": "x", "draws": 0}')).toThrow();
     expect(() => deserializePrng("null")).toThrow();
+  });
+
+  it("REGRESSION (Copilot-confirmed): rejects a fractional/out-of-range 'a' instead of silently normalizing it through >>> 0", () => {
+    // Previously: 4294967296.5 >>> 0 === 0 — a completely different, unreported stream.
+    expect(() => deserializePrng('{"a": 4294967296.5, "draws": 0}')).toThrow();
+    expect(() => deserializePrng('{"a": -1, "draws": 0}')).toThrow();
+    expect(() => deserializePrng('{"a": 1.5, "draws": 0}')).toThrow();
+  });
+
+  it("REGRESSION (Copilot-confirmed): rejects a negative or fractional 'draws' instead of accepting it", () => {
+    expect(() => deserializePrng('{"a": 1, "draws": -1}')).toThrow();
+    expect(() => deserializePrng('{"a": 1, "draws": 1.5}')).toThrow();
+  });
+
+  it("accepts a valid uint32 'a' at the boundary and preserves it exactly", () => {
+    expect(deserializePrng('{"a": 4294967295, "draws": 0}')).toEqual({ a: 4294967295, draws: 0 });
   });
 });

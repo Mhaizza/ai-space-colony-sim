@@ -165,6 +165,31 @@ describe("malformed-state rejection", () => {
     (saved.world.modules as unknown as Record<string, unknown>).foodStation = { id: "foodStation", functional: "yes" };
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
   });
+
+  it("REGRESSION (Copilot-confirmed): rejects an unrecognized trait id in baseTraits instead of casting it through", () => {
+    const state = createInitialState(1, "c1", "Maya", ["engineering"], ["driven"]);
+    const saved = JSON.parse(serialize(state)) as { colonist: { identity: { baseTraits: unknown[] } } };
+    saved.colonist.identity.baseTraits = ["unknown"];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/unrecognized value/);
+  });
+
+  it("REGRESSION (Copilot-confirmed): rejects a need level outside [0, 1]", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    const saved = JSON.parse(serialize(state)) as { colonist: { needs: { hunger: { level: number } } } };
+    saved.colonist.needs.hunger.level = -10;
+    expect(() => deserialize(JSON.stringify(saved))).toThrow();
+  });
+
+  it("REGRESSION (Copilot-confirmed): rejects a negative or fractional ticksBelowLow", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    const negative = JSON.parse(serialize(state)) as { colonist: { needs: { rest: { ticksBelowLow: number } } } };
+    negative.colonist.needs.rest.ticksBelowLow = -5;
+    expect(() => deserialize(JSON.stringify(negative))).toThrow();
+
+    const fractional = JSON.parse(serialize(state)) as { colonist: { needs: { rest: { ticksBelowLow: number } } } };
+    fractional.colonist.needs.rest.ticksBelowLow = 1.5;
+    expect(() => deserialize(JSON.stringify(fractional))).toThrow();
+  });
 });
 
 describe("deep TickEvent payload validation", () => {
