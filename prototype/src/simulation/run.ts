@@ -34,6 +34,7 @@ export function createInitialState(
     suspendedExecution: null,
     prng: createPrng(seed),
     ...createFreshMemoryBaselines(),
+    hasBootstrapped: false,
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
   };

@@ -63,6 +63,12 @@ export function appendDecision(log: DecisionLog, tick: number, outcome: Decision
  * Extracts and appends decision records from one tick's events — the "decision" kind already
  * carries the full DecisionOutcome (decide.ts), so this only unwraps and appends; it never
  * re-derives or re-composes anything. A no-op when `events` contains no "decision" entry.
+ *
+ * Scoped to `log`'s OWN append order (seq starts from `log.length`, independent of any other
+ * log). Valid on its own, but do NOT combine its output with a same-tick `appendEvents` call and
+ * expect `reconstructTrace` to interleave them correctly — the two logs' seq numbers would come
+ * from two different counters and a tie between them is not a true chronology tie. Use
+ * `appendTickRecords` for that (tick.ts's actual production path).
  */
 export function appendDecisionsFromEvents(log: DecisionLog, tick: number, events: readonly TickEvent[]): DecisionLog {
   let next = log;
@@ -72,6 +78,36 @@ export function appendDecisionsFromEvents(log: DecisionLog, tick: number, events
     }
   }
   return next;
+}
+
+/**
+ * Appends one tick's events to BOTH logs in a single pass, sharing ONE seq-numbering space
+ * (driven by eventLog's own growth) so a decision record always carries the exact seq its
+ * mirrored "decision" TickEvent received in the event log. This is what makes cross-log
+ * chronological reconstruction (reconstructTrace) correct: comparing `eventLog` seq to
+ * `decisionLog` seq is only meaningful when both come from the same counter. Calling
+ * `appendEvents` and `appendDecisionsFromEvents` separately for the same tick does NOT
+ * guarantee this — each scopes seq to its own log's append order, so two same-tick records
+ * (e.g. a "bootstrap" event and a "decision" event/record both landing at seq 0 in their
+ * respective logs) can tie on seq despite one having occurred strictly after the other within
+ * the tick, and the tie-break (`kind`) does not know which log's seq 0 came first.
+ */
+export function appendTickRecords(
+  eventLog: EventLog,
+  decisionLog: DecisionLog,
+  tick: number,
+  events: readonly TickEvent[],
+): { readonly eventLog: EventLog; readonly decisionLog: DecisionLog } {
+  let nextEventLog = eventLog;
+  let nextDecisionLog = decisionLog;
+  for (const event of events) {
+    const seq = nextEventLog.length;
+    nextEventLog = [...nextEventLog, { seq, tick, event }];
+    if (event.kind === "decision") {
+      nextDecisionLog = [...nextDecisionLog, { seq, tick, outcome: event.outcome }];
+    }
+  }
+  return { eventLog: nextEventLog, decisionLog: nextDecisionLog };
 }
 
 /** One entry in a reconstructed trace — an event or a decision, tagged so callers can discriminate. */

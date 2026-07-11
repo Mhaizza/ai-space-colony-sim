@@ -11,6 +11,7 @@ import {
   appendDecisionsFromEvents,
   appendEvent,
   appendEvents,
+  appendTickRecords,
   createDecisionLog,
   createEventLog,
   reconstructTrace,
@@ -55,6 +56,7 @@ const commitOutcome: DecisionOutcome = {
   composedWeights: [composed],
   draws: [draw],
   prngState: { a: 2, draws: 1 },
+  blockedCandidates: [],
 };
 
 const bootstrapEvent: TickEvent = { kind: "bootstrap" };
@@ -157,5 +159,72 @@ describe("reconstructTrace — deterministic record ordering", () => {
 
   it("empty logs reconstruct to an empty trace", () => {
     expect(reconstructTrace(createEventLog(), createDecisionLog())).toEqual([]);
+  });
+});
+
+describe("appendTickRecords — shared seq space (Copilot-confirmed cross-log ordering defect)", () => {
+  it("a decision record shares its mirrored event's seq, not an independently-numbered one", () => {
+    // Same tick, several events BEFORE the decision — reproduces the exact bug scenario: a
+    // decisionLog independently starting its own seq at 0 would tie with the bootstrap event's
+    // eventLog seq 0, even though the decision happened strictly later in the tick.
+    const { eventLog, decisionLog } = appendTickRecords(createEventLog(), createDecisionLog(), 0, [
+      bootstrapEvent,
+      decisionEvent,
+    ]);
+    const decisionEventRecord = eventLog.find((r) => r.event.kind === "decision")!;
+    expect(decisionLog[0]!.seq).toBe(decisionEventRecord.seq);
+    expect(decisionLog[0]!.seq).not.toBe(0); // it is NOT independently re-numbered from 0
+  });
+
+  it("reconstructTrace orders a same-tick bootstrap-then-decision correctly, decision last", () => {
+    const { eventLog, decisionLog } = appendTickRecords(createEventLog(), createDecisionLog(), 0, [
+      bootstrapEvent,
+      decisionEvent,
+    ]);
+    const trace = reconstructTrace(eventLog, decisionLog);
+    // Three retrievable records at tick 0: the bootstrap event, the decision-as-event, and the
+    // decision record itself — the decision record must never sort before the bootstrap event.
+    const bootstrapIndex = trace.findIndex((e) => e.kind === "event" && e.event.kind === "bootstrap");
+    const decisionRecordIndex = trace.findIndex((e) => e.kind === "decision");
+    expect(bootstrapIndex).toBeGreaterThanOrEqual(0);
+    expect(decisionRecordIndex).toBeGreaterThan(bootstrapIndex);
+  });
+
+  it("demonstrates the OLD independent-numbering bug directly, for contrast (documentation, not a claim this is still current behavior)", () => {
+    // appendEvents/appendDecisionsFromEvents remain individually correct (single-log use) but
+    // reproduce the cross-log tie when combined for the same tick — exactly what motivated
+    // appendTickRecords. This test pins that appendTickRecords does NOT have this failure mode.
+    const buggyEventLog = appendEvents(createEventLog(), 0, [bootstrapEvent, decisionEvent]);
+    const buggyDecisionLog = appendDecisionsFromEvents(createDecisionLog(), 0, [bootstrapEvent, decisionEvent]);
+    expect(buggyDecisionLog[0]!.seq).toBe(0); // independently numbered — ties with the bootstrap event's seq 0
+    const buggyTrace = reconstructTrace(buggyEventLog, buggyDecisionLog);
+    const buggyBootstrapIndex = buggyTrace.findIndex((e) => e.kind === "event" && e.event.kind === "bootstrap");
+    const buggyDecisionRecordIndex = buggyTrace.findIndex((e) => e.kind === "decision");
+    expect(buggyDecisionRecordIndex).toBeLessThan(buggyBootstrapIndex); // the bug: decision sorts first, wrongly
+
+    const { eventLog: fixedEventLog, decisionLog: fixedDecisionLog } = appendTickRecords(
+      createEventLog(),
+      createDecisionLog(),
+      0,
+      [bootstrapEvent, decisionEvent],
+    );
+    const fixedTrace = reconstructTrace(fixedEventLog, fixedDecisionLog);
+    const fixedBootstrapIndex = fixedTrace.findIndex((e) => e.kind === "event" && e.event.kind === "bootstrap");
+    const fixedDecisionRecordIndex = fixedTrace.findIndex((e) => e.kind === "decision");
+    expect(fixedDecisionRecordIndex).toBeGreaterThan(fixedBootstrapIndex); // fixed: correct order
+  });
+
+  it("still assigns each event its own eventLog seq, contiguous from the prior log length", () => {
+    const seeded = appendEvent(createEventLog(), 0, bootstrapEvent);
+    const { eventLog } = appendTickRecords(seeded, createDecisionLog(), 1, [decisionEvent, bootstrapEvent]);
+    expect(eventLog.map((r) => r.seq)).toEqual([0, 1, 2]);
+  });
+
+  it("is pure — does not mutate either input log", () => {
+    const eventLog = createEventLog();
+    const decisionLog = createDecisionLog();
+    appendTickRecords(eventLog, decisionLog, 0, [bootstrapEvent, decisionEvent]);
+    expect(eventLog).toEqual([]);
+    expect(decisionLog).toEqual([]);
   });
 });

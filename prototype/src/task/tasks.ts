@@ -111,29 +111,28 @@ export type TaskResolution =
   | { readonly kind: "blocked"; readonly goal: Goal; readonly reasons: readonly string[] };
 
 /**
- * Resolves a committed, active goal to a concrete task. Pure; requires `goal.status ===
- * "active"` (resolving a suspended/blocked/completed/abandoned goal is a caller error).
- *
- * "Blocked goals originate from task resolution, not decision generation": this is the ONLY
- * place in the codebase that calls blockGoal — decide.ts never does (Build Step 6's
- * decideFromCandidates always commits goals as "active"; it has no concept of task
- * availability). When no candidate task serves the goal, or every candidate task is
- * ineligible/unavailable, this function — and only this function — transitions the goal to
- * blocked, with the transition's reasons pointing back at exactly which tasks failed and why.
+ * The outcome of searching for a serving task, without committing anything — no Goal is
+ * required or produced. This is the shared core both `resolveTask` (post-commitment, owns
+ * transitioning a Goal to blocked) and `candidateActionability` (pre-commitment, decide.ts's
+ * tier-filter query — decision-loop §3's "actionable means: at least one eligible, available
+ * task exists that serves the candidate") delegate to, so the eligibility/availability search
+ * itself is written exactly once (coding-standards: no duplicated logic).
  */
-export function resolveTask(goal: Goal, skills: readonly string[], snapshot: WorldSnapshot): TaskResolution {
-  if (goal.status !== "active") {
-    throw new Error(`resolveTask requires an active goal, got status "${goal.status}"`);
-  }
+type TaskSearchResult =
+  | { readonly found: true; readonly task: TaskDefinition }
+  | { readonly found: false; readonly reasons: readonly string[] };
 
-  const candidateIds = [...candidateTaskIdsFor(goal.source, goal.relatedNeed)].sort(); // stable order (EQ-2)
+function findServingTask(
+  source: GoalSource,
+  relatedNeed: NeedId | undefined,
+  skills: readonly string[],
+  snapshot: WorldSnapshot,
+): TaskSearchResult {
+  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed)].sort(); // stable order (EQ-2)
   if (candidateIds.length === 0) {
     return {
-      kind: "blocked",
-      goal: blockGoal(goal),
-      reasons: [
-        `no task class serves goal source "${goal.source}"${goal.relatedNeed ? ` for need "${goal.relatedNeed}"` : ""}`,
-      ],
+      found: false,
+      reasons: [`no task class serves goal source "${source}"${relatedNeed ? ` for need "${relatedNeed}"` : ""}`],
     };
   }
 
@@ -143,12 +142,53 @@ export function resolveTask(goal: Goal, skills: readonly string[], snapshot: Wor
     const eligibility = checkEligibility(task, skills, snapshot);
     const availability = checkAvailability(task, snapshot);
     if (eligibility.eligible && availability.available) {
-      return { kind: "executable", task, goal };
+      return { found: true, task };
     }
     allReasons.push(...eligibility.reasons.map((r) => `${id}: ${r}`), ...availability.reasons.map((r) => `${id}: ${r}`));
   }
 
-  return { kind: "blocked", goal: blockGoal(goal), reasons: allReasons };
+  return { found: false, reasons: allReasons };
+}
+
+/**
+ * Resolves a committed, active goal to a concrete task. Pure; requires `goal.status ===
+ * "active"` (resolving a suspended/blocked/completed/abandoned goal is a caller error).
+ *
+ * "Blocked goals originate from task resolution, not decision generation": this is the ONLY
+ * place in the codebase that calls blockGoal — decide.ts never does (decideFromCandidates
+ * always commits goals as "active"; it never transitions a Goal to blocked, because it never
+ * holds one yet at the point it queries actionability — see candidateActionability below).
+ * When no candidate task serves the goal, or every candidate task is ineligible/unavailable,
+ * this function — and only this function — transitions the goal to blocked, with the
+ * transition's reasons pointing back at exactly which tasks failed and why.
+ */
+export function resolveTask(goal: Goal, skills: readonly string[], snapshot: WorldSnapshot): TaskResolution {
+  if (goal.status !== "active") {
+    throw new Error(`resolveTask requires an active goal, got status "${goal.status}"`);
+  }
+
+  const result = findServingTask(goal.source, goal.relatedNeed, skills, snapshot);
+  if (result.found) {
+    return { kind: "executable", task: result.task, goal };
+  }
+  return { kind: "blocked", goal: blockGoal(goal), reasons: result.reasons };
+}
+
+/**
+ * Pre-commitment actionability query for a not-yet-committed candidate (decision-loop §3's
+ * Filter stage: "Actionable means: at least one eligible, available task exists that serves
+ * the candidate (§5)"). Unlike resolveTask, this never produces or blocks a Goal — decide.ts
+ * uses it to decide WHICH tier wins before anything is committed, per the architecture's own
+ * stage order (Filter, then Select, then Resolve/Commit — decision-loop §2). Shares
+ * findServingTask's search with resolveTask so the two never diverge.
+ */
+export function candidateActionability(
+  source: GoalSource,
+  relatedNeed: NeedId | undefined,
+  skills: readonly string[],
+  snapshot: WorldSnapshot,
+): TaskSearchResult {
+  return findServingTask(source, relatedNeed, skills, snapshot);
 }
 
 /**

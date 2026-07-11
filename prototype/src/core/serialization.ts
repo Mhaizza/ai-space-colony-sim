@@ -24,7 +24,7 @@ import type { StressState } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { WeightTiltContribution } from "../colonist/traits.js";
 import type { Goal, GoalStatus } from "../decision/goals.js";
-import { type AttributedDraw, type DecisionOutcome } from "../decision/decide.js";
+import { type AttributedDraw, type BlockedCandidateRecord, type DecisionOutcome } from "../decision/decide.js";
 import type { ComposedWeight, MemoryContribution, StressChannel, StressWeightContribution } from "../decision/weights.js";
 import type { Execution, ExecutionStatus } from "../task/execution.js";
 import type { TaskDefinition, TaskId, TaskResolution } from "../task/tasks.js";
@@ -314,15 +314,28 @@ function readComposedWeight(raw: unknown, field: string): ComposedWeight {
   };
 }
 
+function readBlockedCandidate(raw: unknown, field: string): BlockedCandidateRecord {
+  const o = expectObject(raw, field);
+  return {
+    key: expectString(o.key, `${field}.key`),
+    source: expectOneOf(o.source, GOAL_SOURCES, `${field}.source`),
+    tier: expectPriorityTier(o.tier, `${field}.tier`),
+    reasons: expectArray(o.reasons, `${field}.reasons`).map((r, i) => expectString(r, `${field}.reasons[${i}]`)),
+  };
+}
+
 function readDecisionOutcome(raw: unknown, field: string): DecisionOutcome {
   const o = expectObject(raw, field);
   const kind = expectOneOf(o.kind, ["commit", "blocked"] as const, `${field}.kind`);
   const draws = expectArray(o.draws, `${field}.draws`).map((d, i) => readAttributedDraw(d, `${field}.draws[${i}]`));
   const prngState = deserializePrng(JSON.stringify(o.prngState));
+  const blockedCandidates = expectArray(o.blockedCandidates, `${field}.blockedCandidates`).map((b, i) =>
+    readBlockedCandidate(b, `${field}.blockedCandidates[${i}]`),
+  );
 
   if (kind === "blocked") {
     if (draws.length !== 0) fail(`"${field}.draws" must be empty for a blocked outcome`);
-    return { kind: "blocked", draws: [], prngState };
+    return { kind: "blocked", draws: [], prngState, blockedCandidates };
   }
 
   return {
@@ -334,6 +347,7 @@ function readDecisionOutcome(raw: unknown, field: string): DecisionOutcome {
     ),
     draws,
     prngState,
+    blockedCandidates,
   };
 }
 
@@ -455,11 +469,17 @@ function readEventLog(raw: unknown): EventLog {
 function readDecisionLog(raw: unknown): DecisionLog {
   const entries = expectArray(raw, "decisionLog");
   let previousTick = -1;
+  let previousSeq = -1;
   return entries.map((entryRaw, i): DecisionRecord => {
     const field = `decisionLog[${i}]`;
     const o = expectObject(entryRaw, field);
     const seq = expectNonNegativeInteger(o.seq, `${field}.seq`);
-    if (seq !== i) fail(`"${field}.seq" must be contiguous and start at 0 (expected ${i}, got ${seq})`);
+    // decisionLog's seq is drawn from the SHARED eventLog numbering space (records/logs.ts's
+    // appendTickRecords), not decisionLog's own array index — a decision record only exists
+    // for the (sparse) subset of events that were decisions, so seq is strictly increasing
+    // across decisionLog entries but not contiguous with them.
+    if (seq <= previousSeq) fail(`"${field}.seq" must strictly increase across decisionLog entries (got ${seq} after ${previousSeq})`);
+    previousSeq = seq;
     const tick = expectNonNegativeInteger(o.tick, `${field}.tick`);
     if (tick < previousTick) fail(`"${field}.tick" must not decrease (got ${tick} after ${previousTick})`);
     previousTick = tick;
@@ -485,6 +505,7 @@ export function serialize(state: SimulationState): string {
     prng: state.prng,
     deprivationBaselines: state.deprivationBaselines,
     stressBaseline: state.stressBaseline,
+    hasBootstrapped: state.hasBootstrapped,
     eventLog: state.eventLog,
     decisionLog: state.decisionLog,
   });
@@ -520,6 +541,7 @@ export function deserialize(json: string): SimulationState {
     prng: deserializePrng(JSON.stringify(o.prng)),
     deprivationBaselines: readDeprivationBaselines(o.deprivationBaselines),
     stressBaseline: expectNumber(o.stressBaseline, "stressBaseline"),
+    hasBootstrapped: expectBoolean(o.hasBootstrapped, "hasBootstrapped"),
     eventLog: readEventLog(o.eventLog),
     decisionLog: readDecisionLog(o.decisionLog),
   };

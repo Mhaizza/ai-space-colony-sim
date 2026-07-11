@@ -56,7 +56,7 @@ import {
   resumeExecution,
   type Execution,
 } from "../task/execution.js";
-import { appendDecisionsFromEvents, appendEvents, type DecisionLog, type EventLog } from "../records/logs.js";
+import { appendTickRecords, type DecisionLog, type EventLog } from "../records/logs.js";
 
 /**
  * The complete, explicit simulation state — everything tick() reads or writes across calls.
@@ -87,6 +87,15 @@ export interface SimulationState {
    */
   readonly deprivationBaselines: Readonly<Record<NeedId, number>>;
   readonly stressBaseline: number;
+  /**
+   * Whether tick() has ever run for this state before (review fix, cross-referenced Copilot
+   * finding). Starts `false` only in a genuinely fresh `createInitialState` result; every call
+   * to tick() sets it `true` in its output, permanently. Gates the one-time "bootstrap"
+   * TickEvent (the trigger that kicks off the very first decision) so it fires exactly once,
+   * never on every subsequent tick a colonist merely happens to have no execution — which
+   * previously included every tick after a goal became blocked.
+   */
+  readonly hasBootstrapped: boolean;
   /**
    * Append-only behavior trace (Build Step 9). Record SEMANTICS (types, append rules, trace
    * reconstruction) belong entirely to records/logs.ts — this module only calls into it with
@@ -164,10 +173,11 @@ export function validateSimulationState(state: SimulationState): void {
  * `events` on top via logs.ts (which owns what a record is), keyed to `state.clock.tick`.
  */
 function finish(state: SimulationState, events: readonly TickEvent[]): TickResult {
+  const { eventLog, decisionLog } = appendTickRecords(state.eventLog, state.decisionLog, state.clock.tick, events);
   const withLogs: SimulationState = {
     ...state,
-    eventLog: appendEvents(state.eventLog, state.clock.tick, events),
-    decisionLog: appendDecisionsFromEvents(state.decisionLog, state.clock.tick, events),
+    eventLog,
+    decisionLog,
   };
   validateSimulationState(withLogs);
   return { state: withLogs, events };
@@ -344,9 +354,21 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     if (consequences.world !== undefined) world = consequences.world;
 
     execution = progressed;
-  } else if (execution === null) {
+  } else if (execution === null && !state.hasBootstrapped) {
+    // Genuine initial-state adoption ONLY: fires once, on the first tick a simulation has ever
+    // processed. Gating on "no execution" alone (the prior condition) fired every tick a
+    // colonist had no execution for ANY reason — including every tick after a goal became
+    // blocked — repeating full decision/task-resolution work with no new re-decision trigger
+    // and growing the event log unboundedly. Blocked-goal retry has its own trigger (the
+    // blockage detection above, and whichever of the six re-decision triggers next fires); it
+    // does not need, and must not reuse, this one-time bootstrap signal.
     events.push({ kind: "bootstrap" });
   }
+  // Set unconditionally: after this tick has run at all, the state is no longer "genuinely
+  // fresh" — regardless of whether bootstrap actually fired (a colonist could begin life with
+  // an in-progress execution in a hand-built or future-scenario state, in which case bootstrap
+  // correctly never fires at all, and this still becomes permanently true from tick one).
+  const hasBootstrapped = true;
 
   // --- Phase: memory formation (M9) — involuntary, from cumulative need/stress movement since
   // each baseline (see SimulationState doc). A need at or above satisfaction, or that has
@@ -458,7 +480,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, eventLog: state.eventLog, decisionLog: state.decisionLog,
+        deprivationBaselines, stressBaseline, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog,
       },
       events,
     );
@@ -479,7 +501,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, eventLog: state.eventLog, decisionLog: state.decisionLog,
+        deprivationBaselines, stressBaseline, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog,
       },
       events,
     );
@@ -501,8 +523,15 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
       suspendedExecution = suspended.suspendedExecution;
     }
 
-    const decision = decideFromCandidates(candidates, colonist, prng, clock.tick);
+    const decision = decideFromCandidates(candidates, colonist, prng, clock.tick, snapshot);
     events.push({ kind: "decision", outcome: decision });
+    // Every higher-tier candidate the filter found non-actionable and fell through — retained
+    // in decision.blockedCandidates (decisionLog persists the full outcome already), and ALSO
+    // surfaced as its own "blockage" event so the flat trace shows it without unpacking a
+    // decision payload, matching the existing post-commit blockage event's visibility.
+    for (const blocked of decision.blockedCandidates) {
+      events.push({ kind: "blockage", goalKey: blocked.key, reasons: blocked.reasons });
+    }
     prng = decision.prngState;
 
     if (decision.kind === "commit") {
@@ -518,7 +547,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   return finish(
     {
       clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-      deprivationBaselines, stressBaseline, eventLog: state.eventLog, decisionLog: state.decisionLog,
+      deprivationBaselines, stressBaseline, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog,
     },
     events,
   );

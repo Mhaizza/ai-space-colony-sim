@@ -33,6 +33,7 @@ function stateAtTickOfDay(
     suspendedExecution: null,
     prng: createPrng(seed),
     ...createFreshMemoryBaselines(),
+    hasBootstrapped: false, // a freshly-built colonist with no goal/execution — genuinely never decided
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
   };
@@ -208,6 +209,7 @@ describe("goal interruption and resume — preserved execution progress (review 
       suspendedExecution,
       prng: createPrng(1),
       ...createFreshMemoryBaselines(),
+      hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
     };
@@ -270,6 +272,7 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       suspendedExecution: voluntaryExecution,
       prng: createPrng(1),
       ...createFreshMemoryBaselines(),
+      hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
     };
@@ -672,6 +675,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       suspendedExecution: voluntaryExec,
       prng: createPrng(1),
       ...createFreshMemoryBaselines(),
+      hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
     };
