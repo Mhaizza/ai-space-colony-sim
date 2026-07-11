@@ -5,9 +5,12 @@
 //
 // Perception invariants enforced by construction, not by convention:
 //   - fixed: buildSnapshot returns a plain immutable value; nothing in it can change after
-//     the call returns, because World/Policy/Clock updates never mutate in place — they
-//     always produce a new state object, so an existing snapshot can never observe a later
-//     update (locked #4: "no mid-decision reads, no live cross-agent references").
+//     the call returns. The policy and per-module slices are COPIED at build time (Copilot-
+//     confirmed defect: they previously aliased the caller's objects, so the "fixed" claim
+//     held only by the convention that World/Policy updates never mutate in place — a
+//     mutation through any other reference would have retroactively changed an existing
+//     snapshot). Copying makes the invariant hold at runtime regardless of what any caller
+//     does (locked #4: "no mid-decision reads, no live cross-agent references").
 //   - Tier-1-only, spatially bounded: nearbyColonists carries only observable ambient state,
 //     never another colonist's internals (locked #21). At Stage 1 there is exactly one
 //     colonist, so the field is always empty — present, not populated, per the Stage 1 scope.
@@ -18,7 +21,7 @@
 
 import type { ClockState } from "../core/clock.js";
 import { dayOf, tickOfDay } from "../core/clock.js";
-import type { ModuleId } from "../config/constants.js";
+import { MODULE_IDS, type ModuleId } from "../config/constants.js";
 import type { ModuleState, WorldState } from "./world.js";
 import type { ShiftPeriod, ShiftPolicy } from "./policy.js";
 import { periodAt } from "./policy.js";
@@ -47,18 +50,22 @@ export interface WorldSnapshot {
 
 /**
  * Builds one fixed snapshot from the current world, policy, and clock state. Pure: the
- * result is a new plain object; later updates to world/policy/clock cannot retroactively
- * change it, because those modules never mutate their state in place.
+ * result is a new plain object, and the policy/module slices are copied rather than aliased —
+ * no later mutation reachable through the caller's references can change an existing snapshot.
  */
 export function buildSnapshot(clock: ClockState, policy: ShiftPolicy, world: WorldState): WorldSnapshot {
   const tod = tickOfDay(clock);
+  const modules = {} as Record<ModuleId, ModuleState>;
+  for (const id of MODULE_IDS) {
+    modules[id] = { ...world.modules[id] };
+  }
   return {
     tick: clock.tick,
     day: dayOf(clock),
     tickOfDay: tod,
     currentPeriod: periodAt(policy, tod),
-    effectivePolicy: policy,
-    modules: world.modules,
+    effectivePolicy: { ...policy },
+    modules,
     foodStock: world.foodStock,
     nearbyColonists: [],
   };

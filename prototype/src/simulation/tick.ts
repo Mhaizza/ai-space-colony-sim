@@ -131,17 +131,52 @@ export interface TickResult {
 }
 
 /**
- * Validates the suspended-pair invariant (review fix 2, 2026-07-10): `colonist.suspendedGoal`
- * is null iff `suspendedExecution` is null — the pair is retained or cleared together, never
- * one without the other. When both are present, checks their association as far as Stage 1
- * data permits: the execution's `goalKey` must name the suspended goal, and a genuinely
- * suspended execution can only be in the "interrupted" status (never "inProgress",
- * "completed", or "aborted" while parked in this slot). Throws on violation — malformed state
- * is rejected explicitly here rather than allowed to silently corrupt downstream logic.
+ * Validates the cross-field goal/execution invariants. Suspended pair (review fix 2,
+ * 2026-07-10): `colonist.suspendedGoal` is null iff `suspendedExecution` is null — the pair is
+ * retained or cleared together, never one without the other. When both are present, checks
+ * their association as far as Stage 1 data permits: the execution's `goalKey` must name the
+ * suspended goal, and a genuinely suspended execution can only be in the "interrupted" status
+ * (never "inProgress", "completed", or "aborted" while parked in this slot). Active pair
+ * (Copilot-confirmed defect — only the suspended pair was checked before): a non-null
+ * `execution` must be "inProgress" and must serve the current ACTIVE goal by key; otherwise
+ * the next tick would apply that task's consequences for a goal that never resolved to it.
+ * Every tick() exit point leaves the active slot in exactly this shape — completion, blockage,
+ * and suspension all replace or clear goal and execution together (adoptAndResolve,
+ * resumeSuspended, suspendCurrentGoal), and interrupted executions live only in the suspended
+ * slot — so anything else cannot describe a state this simulation produced. Throws on
+ * violation — malformed state is rejected explicitly here rather than allowed to silently
+ * corrupt downstream logic.
  */
 export function validateSimulationState(state: SimulationState): void {
-  const { suspendedGoal } = state.colonist;
-  const { suspendedExecution } = state;
+  const { suspendedGoal, currentGoal } = state.colonist;
+  const { suspendedExecution, execution } = state;
+
+  if (execution !== null) {
+    if (execution.status !== "inProgress") {
+      throw new Error(
+        `Invalid SimulationState: an active execution must have status "inProgress", got "${execution.status}" — ` +
+          `interrupted executions belong in suspendedExecution; completed/aborted ones are never retained.`,
+      );
+    }
+    if (currentGoal === null) {
+      throw new Error(
+        `Invalid SimulationState: execution ("${execution.taskId}" for goal "${execution.goalKey}") is present ` +
+          `but currentGoal is null.`,
+      );
+    }
+    if (currentGoal.status !== "active") {
+      throw new Error(
+        `Invalid SimulationState: execution ("${execution.taskId}") is in progress but currentGoal ` +
+          `("${currentGoal.key}") has status "${currentGoal.status}" — only an active goal can be executing.`,
+      );
+    }
+    if (execution.goalKey !== currentGoal.key) {
+      throw new Error(
+        `Invalid SimulationState: execution.goalKey ("${execution.goalKey}") does not match currentGoal.key ` +
+          `("${currentGoal.key}").`,
+      );
+    }
+  }
 
   if ((suspendedGoal === null) !== (suspendedExecution === null)) {
     throw new Error(

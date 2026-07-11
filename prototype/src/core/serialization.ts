@@ -13,6 +13,7 @@
 // that check here (no duplicated logic).
 
 import { GOAL_SOURCES, MODULE_IDS, NEEDS, PRIORITY_TIERS, TASK_CLASSES, type ModuleId, type NeedId, type PriorityTier } from "../config/constants.js";
+import { MEMORY_TUNING } from "../config/tuning.js";
 import { deserializeClock } from "./clock.js";
 import { deserializePrng } from "./prng.js";
 import { validatePolicy, type ShiftPeriod, type ShiftPolicy } from "../world/policy.js";
@@ -157,15 +158,39 @@ function readNeeds(raw: unknown): NeedsState {
   return needs;
 }
 
-function readMemory(raw: unknown): MemoryPool {
-  return expectArray(raw, "colonist.memory").map((entryRaw, i): MemoryEntry => {
+/**
+ * Copilot-confirmed defect: memory entries previously only needed `id`/`formedAtTick`/`impact`
+ * to be finite numbers, so fractional or negative ids and formation ticks, impacts outside
+ * memory.ts's fixed-at-formation [0, 1] range, duplicate ids, a pool over capacity, and
+ * formation ticks in the loaded clock's future all deserialized successfully — and a future
+ * `formedAtTick` later makes `influence()` throw mid-continuation. Each bound below is the
+ * memory module's own contract (memory.ts: `nextId` assigns non-negative integers uniquely in
+ * formation order; `clamp01` fixes impact into [0, 1] at formation; every mutator enforces
+ * MEMORY_TUNING.poolSize — the capacity constant is imported from tuning, not re-declared).
+ * `clockTick` is the already-deserialized clock's tick, cross-checked so no entry postdates
+ * the save's own present.
+ */
+function readMemory(raw: unknown, clockTick: number): MemoryPool {
+  const entries = expectArray(raw, "colonist.memory");
+  if (entries.length > MEMORY_TUNING.poolSize) {
+    fail(`"colonist.memory" exceeds the bounded pool capacity (${MEMORY_TUNING.poolSize}), got ${entries.length} entries`);
+  }
+  const seenIds = new Set<number>();
+  return entries.map((entryRaw, i): MemoryEntry => {
     const o = expectObject(entryRaw, `colonist.memory[${i}]`);
     const type = expectOneOf(o.type, ["deprivation", "condition"] as const, `colonist.memory[${i}].type`);
     const context = expectObject(o.context, `colonist.memory[${i}].context`);
+    const id = expectNonNegativeInteger(o.id, `colonist.memory[${i}].id`);
+    if (seenIds.has(id)) fail(`"colonist.memory[${i}].id" duplicates id ${id} — memory ids are unique`);
+    seenIds.add(id);
+    const formedAtTick = expectNonNegativeInteger(o.formedAtTick, `colonist.memory[${i}].formedAtTick`);
+    if (formedAtTick > clockTick) {
+      fail(`"colonist.memory[${i}].formedAtTick" (${formedAtTick}) postdates the saved clock tick (${clockTick})`);
+    }
     const base = {
-      id: expectNumber(o.id, `colonist.memory[${i}].id`),
-      formedAtTick: expectNumber(o.formedAtTick, `colonist.memory[${i}].formedAtTick`),
-      impact: expectNumber(o.impact, `colonist.memory[${i}].impact`),
+      id,
+      formedAtTick,
+      impact: expectUnitInterval(o.impact, `colonist.memory[${i}].impact`),
     };
     if (type === "deprivation") {
       return { ...base, type, context: { needId: expectOneOf(context.needId, NEEDS, `colonist.memory[${i}].context.needId`) } };
@@ -215,12 +240,12 @@ function readIdentity(raw: unknown): ColonistIdentity {
   };
 }
 
-function readColonist(raw: unknown): ColonistState {
+function readColonist(raw: unknown, clockTick: number): ColonistState {
   const o = expectObject(raw, "colonist");
   return {
     identity: readIdentity(o.identity),
     needs: readNeeds(o.needs),
-    memory: readMemory(o.memory),
+    memory: readMemory(o.memory, clockTick),
     stress: readStress(o.stress),
     currentGoal: readNullableGoal(o.currentGoal, "colonist.currentGoal"),
     suspendedGoal: readNullableGoal(o.suspendedGoal, "colonist.suspendedGoal"),
@@ -568,11 +593,14 @@ export function deserialize(json: string): SimulationState {
     throw new Error(`Unsupported save format version: ${version} (expected ${SAVE_FORMAT_VERSION})`);
   }
 
+  const clock = deserializeClock(JSON.stringify(o.clock));
   const state: SimulationState = {
-    clock: deserializeClock(JSON.stringify(o.clock)),
+    clock,
     world: readWorld(o.world),
     policy: readPolicy(o.policy),
-    colonist: readColonist(o.colonist),
+    // The clock's tick is threaded in so memory formation ticks can be cross-checked against
+    // the save's own present (a memory formed in the future is malformed, not repairable).
+    colonist: readColonist(o.colonist, clock.tick),
     execution: readNullableExecution(o.execution, "execution"),
     suspendedExecution: readNullableExecution(o.suspendedExecution, "suspendedExecution"),
     prng: deserializePrng(JSON.stringify(o.prng)),

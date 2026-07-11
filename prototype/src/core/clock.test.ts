@@ -77,4 +77,10 @@ describe("clock serialization round-trip (spec §7)", () => {
     expect(() => deserializeClock('{"tick": 1.5}')).toThrow();
     expect(() => deserializeClock("null")).toThrow();
   });
+
+  it("REGRESSION (Copilot-confirmed): rejects a negative tick — simulation time starts at zero and never goes below it", () => {
+    expect(() => deserializeClock('{"tick": -1}')).toThrow();
+    expect(() => deserializeClock('{"tick": -500}')).toThrow();
+    expect(deserializeClock('{"tick": 0}')).toEqual({ tick: 0 }); // the boundary itself stays valid
+  });
 });

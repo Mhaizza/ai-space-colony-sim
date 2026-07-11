@@ -48,6 +48,21 @@ describe("snapshot fixity — no live-world mutation leaks into an existing snap
     expect(snapshot.foodStock).toBe(world.foodStock);
   });
 
+  it("REGRESSION (Copilot-confirmed): the snapshot does not alias the caller's policy or module objects — direct mutation through the original references cannot reach an existing snapshot", () => {
+    const policy = createDefaultPolicy();
+    const world = createWorld();
+    const snapshot = buildSnapshot(createClock(), policy, world);
+
+    // Simulate a caller (or future code) mutating the ORIGINAL objects in place — the exact
+    // hazard the aliasing left open. The already-built snapshot must be genuinely fixed, by
+    // copy, not merely by the convention that nobody mutates.
+    (policy as { workTicks: number }).workTicks = 1;
+    (world.modules.foodStation as { functional: boolean }).functional = false;
+
+    expect(snapshot.effectivePolicy.workTicks).toBe(createDefaultPolicy().workTicks);
+    expect(snapshot.modules.foodStation.functional).toBe(true);
+  });
+
   it("a snapshot built from a later world state differs from one built earlier", () => {
     const clock = createClock();
     const policy = createDefaultPolicy();

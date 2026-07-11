@@ -13,6 +13,7 @@ import { BASE_TICKS_PER_STEP } from "../config/constants.js";
 import { setModuleFunctional } from "../world/world.js";
 import { suspendGoal, type Goal } from "../decision/goals.js";
 import type { Execution } from "../task/execution.js";
+import { MEMORY_TUNING } from "../config/tuning.js";
 import { deserialize, SAVE_FORMAT_VERSION, serialize } from "./serialization.js";
 
 // reason: these fixtures are deliberately mutated into shapes deserialize() must REJECT (a
@@ -198,6 +199,86 @@ describe("malformed-state rejection", () => {
     const fractional = JSON.parse(serialize(state)) as { colonist: { needs: { rest: { ticksBelowLow: number } } } };
     fractional.colonist.needs.rest.ticksBelowLow = 1.5;
     expect(() => deserialize(JSON.stringify(fractional))).toThrow();
+  });
+
+  it("REGRESSION (Copilot-confirmed): rejects an inconsistent ACTIVE goal/execution pair at the save boundary", () => {
+    const midpoint = run(createInitialState(42, "c1", "Maya", ["engineering"]), 100).finalState;
+    expect(midpoint.execution).not.toBeNull(); // sanity: the fixture actually has an active pair to corrupt
+
+    const mismatchedKey: RawSave = JSON.parse(serialize(midpoint));
+    mismatchedKey.execution.goalKey = "lowNeed:social"; // no longer names the current goal
+    expect(() => deserialize(JSON.stringify(mismatchedKey))).toThrow(/goalKey/);
+
+    const orphaned: RawSave = JSON.parse(serialize(midpoint));
+    orphaned.colonist.currentGoal = null; // execution left running for no goal at all
+    expect(() => deserialize(JSON.stringify(orphaned))).toThrow(/currentGoal/);
+
+    const blockedGoal: RawSave = JSON.parse(serialize(midpoint));
+    blockedGoal.colonist.currentGoal.status = "blocked"; // an execution cannot serve a blocked goal
+    expect(() => deserialize(JSON.stringify(blockedGoal))).toThrow(/active/);
+
+    const notInProgress: RawSave = JSON.parse(serialize(midpoint));
+    notInProgress.execution.status = "completed"; // the active slot never retains a finished execution
+    expect(() => deserialize(JSON.stringify(notInProgress))).toThrow(/inProgress/);
+  });
+});
+
+describe("memory-pool validation (Copilot-confirmed): the memory module's own contracts enforced at the save boundary", () => {
+  /** A valid saved object carrying `entries` as the colonist's memory pool, clock at `clockTick`. */
+  function savedWithMemory(entries: readonly Record<string, unknown>[], clockTick = 0): RawSave {
+    const state = createInitialState(1, "c1", "Maya");
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.clock.tick = clockTick;
+    saved.colonist.memory = entries;
+    return saved;
+  }
+
+  function entry(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { id: 0, type: "deprivation", context: { needId: "hunger" }, formedAtTick: 0, impact: 0.5, ...overrides };
+  }
+
+  it("accepts a valid pool (positive control), up to exactly the configured capacity", () => {
+    const atCapacity = Array.from({ length: MEMORY_TUNING.poolSize }, (_, i) => entry({ id: i }));
+    const loaded = deserialize(JSON.stringify(savedWithMemory(atCapacity)));
+    expect(loaded.colonist.memory.length).toBe(MEMORY_TUNING.poolSize);
+  });
+
+  it("rejects a fractional or negative memory id (memory ids are non-negative integers, assigned in formation order)", () => {
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ id: 1.5 })])))).toThrow(/id/);
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ id: -1 })])))).toThrow(/id/);
+  });
+
+  it("rejects duplicate memory ids", () => {
+    const duplicated = [entry({ id: 3 }), entry({ id: 3, type: "condition", context: { direction: "rising" } })];
+    expect(() => deserialize(JSON.stringify(savedWithMemory(duplicated)))).toThrow(/duplicates id 3/);
+  });
+
+  it("rejects a fractional or negative formedAtTick", () => {
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ formedAtTick: 0.5 })])))).toThrow(/formedAtTick/);
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ formedAtTick: -1 })])))).toThrow(/formedAtTick/);
+  });
+
+  it("rejects a formedAtTick that postdates the saved clock — a future memory would make influence() throw mid-continuation", () => {
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ formedAtTick: 6 })], 5)))).toThrow(/postdates/);
+    // The boundary itself stays valid: formed on the save's current tick.
+    const atBoundary = deserialize(JSON.stringify(savedWithMemory([entry({ formedAtTick: 5 })], 5)));
+    expect(atBoundary.colonist.memory[0]!.formedAtTick).toBe(5);
+  });
+
+  it("rejects an impact outside the fixed-at-formation [0, 1] range", () => {
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ impact: 1.5 })])))).toThrow(/impact/);
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ impact: -0.1 })])))).toThrow(/impact/);
+  });
+
+  it("rejects a pool over the configured capacity (bound owned by MEMORY_TUNING, not re-declared)", () => {
+    const overCapacity = Array.from({ length: MEMORY_TUNING.poolSize + 1 }, (_, i) => entry({ id: i }));
+    expect(() => deserialize(JSON.stringify(savedWithMemory(overCapacity)))).toThrow(/capacity/);
+  });
+
+  it("still rejects malformed memory-type-specific fields (pre-existing checks unchanged)", () => {
+    expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ context: { needId: "notANeed" } })])))).toThrow(/unrecognized/);
+    const badDirection = entry({ type: "condition", context: { direction: "sideways" } });
+    expect(() => deserialize(JSON.stringify(savedWithMemory([badDirection])))).toThrow(/unrecognized/);
   });
 });
 

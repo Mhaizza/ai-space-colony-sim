@@ -49,11 +49,15 @@ export function serializeClock(state: ClockState): string {
   return JSON.stringify(state);
 }
 
-/** Restores clock state from a save. Throws on malformed input. */
+/** Restores clock state from a save. Throws on malformed input — including a negative tick:
+ * simulation time starts at 0 (createClock) and only ever advances (advance rejects negative
+ * deltas), so a negative saved tick cannot describe a state this clock ever produced; it would
+ * otherwise surface later as a negative tickOfDay failing inside policy resolution. */
 export function deserializeClock(json: string): ClockState {
   const raw: unknown = JSON.parse(json);
-  if (typeof raw !== "object" || raw === null || !Number.isInteger((raw as { tick?: unknown }).tick)) {
+  const tick = (raw as { tick?: unknown } | null)?.tick;
+  if (typeof raw !== "object" || raw === null || !Number.isInteger(tick) || (tick as number) < 0) {
     throw new Error("Invalid clock state");
   }
-  return { tick: (raw as { tick: number }).tick };
+  return { tick: tick as number };
 }

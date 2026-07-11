@@ -628,6 +628,54 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     expect(() => validateSimulationState(state)).toThrow();
   });
 
+  it("REGRESSION (Copilot-confirmed) — active-pair invariant: rejects an execution whose goalKey does not match currentGoal.key", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = commitGoal(voluntaryCandidate, "m", 0);
+    const unrelatedExec = beginExecution(taskDefinition("eatAtFoodStation"), commitGoal(hungerCandidate, "m", 0), 0);
+    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, goal), execution: unrelatedExec };
+    expect(() => validateSimulationState(state)).toThrow(/goalKey/);
+    expect(() => tick(state, 1)).toThrow(); // input boundary rejects it too
+  });
+
+  it("REGRESSION (Copilot-confirmed) — active-pair invariant: rejects an execution with no current goal at all", () => {
+    const base = stateAtTickOfDay(0);
+    const exec = beginExecution(taskDefinition("idlePresence"), commitGoal(voluntaryCandidate, "m", 0), 0);
+    const state: SimulationState = { ...base, execution: exec }; // colonist.currentGoal stays null
+    expect(() => validateSimulationState(state)).toThrow(/currentGoal is null/);
+    expect(() => tick(state, 1)).toThrow();
+  });
+
+  it("REGRESSION (Copilot-confirmed) — active-pair invariant: rejects an execution running against a blocked goal", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = commitGoal(voluntaryCandidate, "m", 0);
+    const exec = beginExecution(taskDefinition("idlePresence"), goal, 0);
+    const blocked = { ...goal, status: "blocked" as const };
+    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, blocked), execution: exec };
+    expect(() => validateSimulationState(state)).toThrow(/only an active goal can be executing/);
+  });
+
+  it("REGRESSION (Copilot-confirmed) — active-pair invariant: rejects a non-inProgress execution in the active slot", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = commitGoal(voluntaryCandidate, "m", 0);
+    const interrupted = interruptExecution(beginExecution(taskDefinition("idlePresence"), goal, 0));
+    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, goal), execution: interrupted };
+    expect(() => validateSimulationState(state)).toThrow(/inProgress/);
+  });
+
+  it("active-pair invariant: accepts a consistent in-progress pair, and every organic run output validates", () => {
+    const base = stateAtTickOfDay(0);
+    const goal = commitGoal(voluntaryCandidate, "m", 0);
+    const exec = beginExecution(taskDefinition("idlePresence"), goal, 0);
+    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, goal), execution: exec };
+    expect(() => validateSimulationState(state)).not.toThrow();
+
+    // Organic sanity: a real run's every boundary state already passes through
+    // validateSimulationState inside finish(); one long run exercises completion, blockage-free
+    // re-decision, and shift boundaries under the tightened invariant.
+    const finalState = run(stateAtTickOfDay(0), 600).finalState;
+    expect(() => validateSimulationState(finalState)).not.toThrow();
+  });
+
   it("invariant is preserved across suspend, resume, blockage, and overflow — every intermediate tick output validates", () => {
     // Suspend + resume (free-period interruption/resume scenario).
     const freeStart = policy.workTicks + policy.restTicks;
