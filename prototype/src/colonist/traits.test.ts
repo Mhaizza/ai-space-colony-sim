@@ -12,11 +12,62 @@ import {
   weightTiltContributions,
 } from "./traits.js";
 
-describe("Stage 1 trait is explicitly non-canonical", () => {
+describe("Stage 1 traits are explicitly non-canonical", () => {
   it("has a category among the four ADR-10 categories", () => {
     expect(["workDisposition", "stressResponse", "socialDisposition", "needDisposition"]).toContain(
       categoryOf("driven"),
     );
+  });
+});
+
+describe("REGRESSION (Copilot-confirmed): the provisional trait set covers all four categories, per the linked #103 acceptance criterion", () => {
+  it("driven / resilient / gregarious / wary span workDisposition / stressResponse / socialDisposition / needDisposition, one each", () => {
+    expect(categoryOf("driven")).toBe("workDisposition");
+    expect(categoryOf("resilient")).toBe("stressResponse");
+    expect(categoryOf("gregarious")).toBe("socialDisposition");
+    expect(categoryOf("wary")).toBe("needDisposition");
+  });
+
+  it("resilient shifts Safety's low threshold up (tolerates more strain before registering as low)", () => {
+    const contributions = needThresholdContributions(["resilient"], "safety");
+    expect(contributions).toHaveLength(1);
+    expect(contributions[0]!.lowThresholdShift).toBe(TRAIT_TUNING.resilientSafetyLowThresholdShift);
+    expect(contributions[0]!.lowThresholdShift).toBeGreaterThan(0);
+  });
+
+  it("gregarious speeds Social decay and tilts toward voluntary (tier 5) candidates", () => {
+    const rate = needRateContributions(["gregarious"], "social");
+    expect(rate).toHaveLength(1);
+    expect(rate[0]!.decayMultiplier).toBe(TRAIT_TUNING.gregariousSocialDecayMultiplier);
+    expect(rate[0]!.decayMultiplier).toBeGreaterThan(1);
+    const tilt = weightTiltContributions(["gregarious"], "voluntary");
+    expect(tilt).toHaveLength(1);
+    expect(tilt[0]!.tilt).toBeGreaterThan(1);
+  });
+
+  it("wary speeds Safety decay and lowers its low threshold (registers deprivation sooner)", () => {
+    const rate = needRateContributions(["wary"], "safety");
+    expect(rate[0]!.decayMultiplier).toBe(TRAIT_TUNING.warySafetyDecayMultiplier);
+    expect(rate[0]!.decayMultiplier).toBeGreaterThan(1);
+    const threshold = needThresholdContributions(["wary"], "safety");
+    expect(threshold[0]!.lowThresholdShift).toBeLessThan(0);
+  });
+
+  it("every trait modifier is bounded — none can zero a rate or exceed the tilt cap", () => {
+    for (const traitId of ["driven", "resilient", "gregarious", "wary"] as const) {
+      for (const needId of ["hunger", "rest", "safety", "social", "purpose"] as const) {
+        for (const c of needRateContributions([traitId], needId)) {
+          expect(c.decayMultiplier).toBeGreaterThanOrEqual(TRAIT_TUNING.needRateModifierFloor);
+          expect(c.decayMultiplier).toBeLessThanOrEqual(TRAIT_TUNING.needRateModifierCeiling);
+        }
+      }
+      for (const source of ["shiftAssignment", "lowNeed", "voluntary"] as const) {
+        for (const c of weightTiltContributions([traitId], source)) {
+          expect(c.tilt).toBeGreaterThanOrEqual(WEIGHT_TUNING.familyTiltFloor);
+          expect(c.tilt).toBeLessThanOrEqual(WEIGHT_TUNING.familyTiltCap);
+        }
+      }
+    }
   });
 });
 

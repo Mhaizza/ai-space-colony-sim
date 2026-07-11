@@ -83,13 +83,15 @@ export const WEIGHT_TUNING = {
 
 /**
  * Trait calibration (all provisional — DQ-T1: canonical trait list and magnitudes remain
- * prototype scope; these values exist only to exercise the "driven" Stage 1 provisional
- * trait's two approved surfaces — ADR-17 D7 rate/threshold modifiers, decision-loop §6 weight
- * tilts). The floor/ceiling/bound entries are the bounds every trait modifier is clamped
- * within — bounded, never structural (ADR-17 D7); bound-never-veto (locked #25).
+ * prototype scope; these values exist only to exercise the Stage 1 provisional traits' two
+ * approved surfaces — ADR-17 D7 rate/threshold modifiers, decision-loop §6 weight tilts — one
+ * trait per personality-traits.md category (Work Disposition, Stress Response, Social
+ * Disposition, Need Disposition), per the linked #103 acceptance criterion. The floor/ceiling/
+ * bound entries are the bounds every trait modifier is clamped within — bounded, never
+ * structural (ADR-17 D7); bound-never-veto (locked #25).
  */
 export const TRAIT_TUNING = {
-  /** provisional — "driven" Rest decay multiplier (< 1 = decays slower; resists tiredness). */
+  /** provisional — "driven" (Work Disposition) Rest decay multiplier (< 1 = decays slower; resists tiredness). */
   drivenRestDecayMultiplier: 0.85,
   /** provisional — "driven" Rest low-threshold shift (negative = tolerates more deprivation before feeling low). */
   drivenRestLowThresholdShift: -0.05,
@@ -97,6 +99,22 @@ export const TRAIT_TUNING = {
   drivenAssignmentTilt: 1.3,
   /** provisional — "driven" tilt away from voluntary/idle (tier 5) candidates. */
   drivenVoluntaryTilt: 0.75,
+  /**
+   * provisional — "resilient" (Stress Response) Safety low-threshold shift (positive = tolerates
+   * more psychological strain before it registers as low). ADR-17 D7 exposes no direct stress-
+   * rate surface to traits — this expresses stress resilience through the mechanism that IS
+   * sanctioned: a colonist who registers deprivation later accumulates less
+   * psychNeedDeprivation stress (stress.ts), since both read the same trait-shifted threshold.
+   */
+  resilientSafetyLowThresholdShift: 0.05,
+  /** provisional — "gregarious" (Social Disposition) Social decay multiplier (> 1 = decays faster; craves contact sooner). */
+  gregariousSocialDecayMultiplier: 1.2,
+  /** provisional — "gregarious" tilt toward voluntary/idle (tier 5) candidates — free time is when Social gets served. */
+  gregariousVoluntaryTilt: 1.3,
+  /** provisional — "wary" (Need Disposition) Safety decay multiplier (> 1 = decays faster; more easily unsettled). */
+  warySafetyDecayMultiplier: 1.2,
+  /** provisional — "wary" Safety low-threshold shift (negative = registers deprivation earlier — the opposite lean from "resilient"). */
+  warySafetyLowThresholdShift: -0.05,
   /** provisional — bound: minimum multiplier any trait need-rate modifier may apply (never zero a rate — ADR-17 D7). */
   needRateModifierFloor: 0.5,
   /** provisional — bound: maximum multiplier any trait need-rate modifier may apply. */

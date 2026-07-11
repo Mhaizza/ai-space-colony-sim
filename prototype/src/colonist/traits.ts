@@ -1,11 +1,22 @@
 // M8 Trait System — ADR-10; personality-traits.md; ADR-17 D7 (the two surfaces a trait may
 // touch: need decay/threshold modifiers, and decision weight tilts). Pure throughout.
 //
-// STAGE 1 PROVISIONAL TRAIT — NON-CANONICAL. "driven" exists only to exercise both approved
-// modifier surfaces end-to-end; it is not a design commitment. The canonical trait list
+// STAGE 1 PROVISIONAL TRAITS — NON-CANONICAL. One trait per personality-traits.md category
+// (Work Disposition: driven; Stress Response: resilient; Social Disposition: gregarious; Need
+// Disposition: wary), per the linked #103 acceptance criterion, exercising both approved
+// modifier surfaces end-to-end; none of this is a design commitment. The canonical trait list
 // (DQ-T1) remains deferred to prototype content work per the AI Behavior Specification's
 // resolved documentation ambiguity — this module hosts trait definitions, it does not define
 // the canon.
+//
+// "resilient" has no direct stress-rate surface to touch — ADR-17 D7 sanctions exactly two
+// trait surfaces (need rate/threshold, decision weight), and stress.ts (M7) computes its
+// accumulation/dissipation rates from need state and execution status alone, with no trait
+// input of its own. Adding a third surface would be an architecture change (coding-standards.md
+// requires an ADR before that, not a trait definition). "resilient" instead shifts Safety's low
+// threshold — since stress.ts's psychNeedDeprivation source already reads isLow(traits) (fixed
+// alongside this trait, see the trait-consistency fix), a colonist who registers deprivation
+// later genuinely accumulates less of that stress source, through the sanctioned surface.
 //
 // Bound discipline (ADR-17 D7; decision-loop §6 constraint 2 — bound-never-veto): every
 // modifier this module produces is clamped before use. A trait can tilt a rate or a weight;
@@ -19,8 +30,8 @@
 import type { GoalSource, NeedId } from "../config/constants.js";
 import { TRAIT_TUNING, WEIGHT_TUNING } from "../config/tuning.js";
 
-/** Stage 1 has exactly one provisional, non-canonical trait. */
-export type TraitId = "driven";
+/** Stage 1's provisional, non-canonical trait set — one per category (see module doc). */
+export type TraitId = "driven" | "resilient" | "gregarious" | "wary";
 
 /** The four categories ADR-10/personality-traits define — the category test is the architecture guard. */
 export type TraitCategory = "workDisposition" | "stressResponse" | "socialDisposition" | "needDisposition";
@@ -51,6 +62,41 @@ const TRAITS: Readonly<Record<TraitId, TraitDefinition>> = {
       shiftAssignment: TRAIT_TUNING.drivenAssignmentTilt,
       voluntary: TRAIT_TUNING.drivenVoluntaryTilt,
     },
+  },
+  resilient: {
+    id: "resilient",
+    category: "stressResponse",
+    needModifiers: {
+      safety: {
+        decayMultiplier: 1, // neutral — see module doc: no direct stress-rate surface is sanctioned
+        lowThresholdShift: TRAIT_TUNING.resilientSafetyLowThresholdShift,
+      },
+    },
+    weightTilts: {},
+  },
+  gregarious: {
+    id: "gregarious",
+    category: "socialDisposition",
+    needModifiers: {
+      social: {
+        decayMultiplier: TRAIT_TUNING.gregariousSocialDecayMultiplier,
+        lowThresholdShift: 0,
+      },
+    },
+    weightTilts: {
+      voluntary: TRAIT_TUNING.gregariousVoluntaryTilt,
+    },
+  },
+  wary: {
+    id: "wary",
+    category: "needDisposition",
+    needModifiers: {
+      safety: {
+        decayMultiplier: TRAIT_TUNING.warySafetyDecayMultiplier,
+        lowThresholdShift: TRAIT_TUNING.warySafetyLowThresholdShift,
+      },
+    },
+    weightTilts: {},
   },
 };
 
