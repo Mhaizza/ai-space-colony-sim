@@ -1,5 +1,12 @@
 # Stage 1 Vertical Slice: Implementation A ("prototype") vs. B (PR #107)
 
+> **Historical snapshot — retained as-is.** This is a point-in-time comparison made before the
+> Stage 1 build was finished; the findings below describe the state of both implementations at
+> the moment of review and are deliberately not rewritten. Implementation A was subsequently
+> selected and completed. The recommendations to extract `records/logs.ts` as its own module
+> and to add diverging-seed replay coverage were implemented in later Stage 1 commits. PR #108
+> is the current reviewed implementation; PR #107 was superseded and closed.
+
 ## 1. Architecture compliance
 
 Both preserve the spec's module names/boundaries — no merging of conceptually separate modules. But A's own plan promised `core/serialization.ts` (S3), `records/logs.ts` (S2), `debug/inspector.ts`, `debug/replay.ts`, and `main.ts`, and **none exist**. S2 is folded into `simulation/tick.ts`'s `TickEvent` union (`tick.ts:90-106`) instead of its own module — an unreported deviation from success criterion 8.
