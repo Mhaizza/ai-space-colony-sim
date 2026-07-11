@@ -1,0 +1,15 @@
+{
+  "name": "ai-space-colony-sim-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Stage 1 prototype — single colonist vertical slice. Calibration instrument, not product code.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
