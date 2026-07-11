@@ -66,6 +66,9 @@ describe("replay verification paths", () => {
   it("reports divergence for a tampered (structurally valid) record payload", () => {
     const output = demoRun(7, 150);
     const saved = JSON.parse(output.save);
+    // reason: `saved` is untyped JSON.parse output being searched before it's deliberately
+    // tampered with below — typing this record shape here would need the same unsafe cast
+    // deserialize()'s own tests already justify (core/serialization.test.ts's RawSave).
     const idx = saved.eventLog.findIndex((r: any) => r.event.kind === "executionProgressed");
     expect(idx).toBeGreaterThanOrEqual(0);
     saved.eventLog[idx].event.elapsedTicks += 1;

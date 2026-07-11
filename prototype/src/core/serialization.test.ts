@@ -15,12 +15,21 @@ import { suspendGoal, type Goal } from "../decision/goals.js";
 import type { Execution } from "../task/execution.js";
 import { deserialize, SAVE_FORMAT_VERSION, serialize } from "./serialization.js";
 
+// reason: these fixtures are deliberately mutated into shapes deserialize() must REJECT (a
+// missing field, a wrong enum, a corrupted nested payload) — that is the entire point of this
+// test file. Typing them as parsed-save data would fight the tests' own purpose: every
+// "corrupt this field" assignment below would need an unsafe cast anyway, in the opposite
+// direction from where safety matters (the code under test, not the fixture). `unknown` would
+// only push the same casts one line later. Named once here so every occurrence traces to this
+// explanation rather than repeating it.
+type RawSave = any;
+
 /**
  * A real, valid saved object (parsed) — a run long enough to guarantee at least one decision
  * AND at least one needThresholdCrossing (hunger crosses its low threshold ~tick 545 at its
  * decayPerTick, uninterrupted — see config/tuning.ts).
  */
-function validSaved(): any {
+function validSaved(): RawSave {
   const state = run(createInitialState(1, "c1", "Maya", ["engineering"], ["driven"]), 700).finalState;
   expect(state.decisionLog.length).toBeGreaterThan(0); // sanity: fixture actually has a decision to corrupt
   return JSON.parse(serialize(state));
@@ -201,7 +210,7 @@ describe("deep TickEvent payload validation", () => {
 
   it("rejects a known TickEvent kind with a missing required field", () => {
     const saved = validSaved();
-    const idx = saved.eventLog.findIndex((r: any) => r.event.kind === "executionBegun");
+    const idx = saved.eventLog.findIndex((r: RawSave) => r.event.kind === "executionBegun");
     expect(idx).toBeGreaterThanOrEqual(0); // sanity: fixture actually reaches executionBegun
     delete saved.eventLog[idx].event.taskId;
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
@@ -209,7 +218,7 @@ describe("deep TickEvent payload validation", () => {
 
   it("rejects a needThresholdCrossing with an out-of-set severity", () => {
     const saved = validSaved();
-    const idx = saved.eventLog.findIndex((r: any) => r.event.kind === "needThresholdCrossing");
+    const idx = saved.eventLog.findIndex((r: RawSave) => r.event.kind === "needThresholdCrossing");
     expect(idx).toBeGreaterThanOrEqual(0);
     saved.eventLog[idx].event.severity = "extreme";
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
@@ -217,7 +226,7 @@ describe("deep TickEvent payload validation", () => {
 
   it("rejects a negative elapsedTicks on executionProgressed", () => {
     const saved = validSaved();
-    const idx = saved.eventLog.findIndex((r: any) => r.event.kind === "executionProgressed");
+    const idx = saved.eventLog.findIndex((r: RawSave) => r.event.kind === "executionProgressed");
     expect(idx).toBeGreaterThanOrEqual(0);
     saved.eventLog[idx].event.elapsedTicks = -1;
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
@@ -225,7 +234,7 @@ describe("deep TickEvent payload validation", () => {
 
   it("rejects a non-integer elapsedTicks on executionProgressed", () => {
     const saved = validSaved();
-    const idx = saved.eventLog.findIndex((r: any) => r.event.kind === "executionProgressed");
+    const idx = saved.eventLog.findIndex((r: RawSave) => r.event.kind === "executionProgressed");
     expect(idx).toBeGreaterThanOrEqual(0);
     saved.eventLog[idx].event.elapsedTicks = 1.5;
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
@@ -233,8 +242,8 @@ describe("deep TickEvent payload validation", () => {
 });
 
 describe("deep DecisionOutcome payload validation", () => {
-  function firstDecisionEvent(saved: any): any {
-    const record = saved.eventLog.find((r: any) => r.event.kind === "decision");
+  function firstDecisionEvent(saved: RawSave): RawSave {
+    const record = saved.eventLog.find((r: RawSave) => r.event.kind === "decision");
     expect(record).toBeDefined();
     return record.event;
   }
@@ -313,7 +322,7 @@ describe("log seq/tick invariants", () => {
 
   it("rejects a decreasing tick within a log", () => {
     const saved = validSaved();
-    const idx = saved.eventLog.findIndex((r: any, i: number) => i > 0 && r.tick > saved.eventLog[i - 1].tick);
+    const idx = saved.eventLog.findIndex((r: RawSave, i: number) => i > 0 && r.tick > saved.eventLog[i - 1].tick);
     expect(idx).toBeGreaterThan(0); // sanity: fixture actually advances tick somewhere
     saved.eventLog[idx].tick = saved.eventLog[idx - 1].tick - 1;
     expect(() => deserialize(JSON.stringify(saved))).toThrow(/tick/);
