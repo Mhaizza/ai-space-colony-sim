@@ -1,8 +1,15 @@
 // M12 Task & Execution System — task lifecycle and its owned consequences. decision-loop §2
-// (Execute stage), §10 (behavior as one of the seven ambient states — Stage 1 does not yet
-// build the state-mapping/animation layer; this module owns the lifecycle and consequence
-// facts that a future ambient-state mapper reads, per engineering spec interface 11: "Execution
-// outcomes (M12 → M2 world effects; → M6 satisfaction-condition facts...)".
+// (Execute stage), §10 (behavior as one of the seven ambient states); engineering spec
+// interface 11: "Execution outcomes (M12 → M2 world effects; → M6 satisfaction-condition
+// facts...)". ambientStateFor (below) is the state-mapping layer the linked #103 acceptance
+// criteria require (Copilot-confirmed gap) — a pure read of the SAME execution/stress state
+// this module already owns, published to the inspector (no animation/rendering here; that is
+// explicitly out of Stage 1 scope per architecture-philosophy's simulation/UI separation).
+//
+// Stage 1 gap, named rather than silently papered over: idlePresence (voluntary free time, the
+// only tier-5 content Stage 1 has — decision/goals.ts) maps to "resting" as the closest
+// available texture. The seven-state repertoire has no state for solo unstructured presence —
+// Socializing requires another colonist, which does not exist until Stage 2 (M10/ADR-18).
 //
 // "Execution owns progress and completion": this module is the only place an Execution's
 // status advances. "No world mutation beyond execution consequences": applyProgressConsequences
@@ -13,8 +20,10 @@
 // application returns updated needs/world only, for a later pipeline stage (not built yet) to
 // hand to memory.ts's formation functions.
 
+import type { AmbientState } from "../config/constants.js";
 import { NEED_TUNING, TASK_TUNING } from "../config/tuning.js";
 import { restoreNeed, restoreNeedByAmount, type NeedsState } from "../colonist/needs.js";
+import { isStressedState, type StressState } from "../colonist/stress.js";
 import { consumeFood, type WorldState } from "../world/world.js";
 import type { Goal } from "../decision/goals.js";
 import type { TraitId } from "../colonist/traits.js";
@@ -133,4 +142,26 @@ export function applyProgressConsequences(
     case "idlePresence":
       return {};
   }
+}
+
+const TASK_AMBIENT_STATE: Readonly<Record<TaskId, AmbientState>> = {
+  workAtWorkstation: "working",
+  eatAtFoodStation: "eating",
+  restAtBunk: "resting",
+  idlePresence: "resting", // Stage 1 gap — see module doc.
+};
+
+/**
+ * The colonist's Tier-1 observable ambient state (ADR-05; decision-loop §10) — the "seven-state
+ * observable registry" the linked #103 acceptance criteria require. Pure: reads only the
+ * execution and stress state M12/M7 already own, publishes nothing itself. Stress reads as
+ * "stressed" regardless of what task is executing — the internal load overrides the visible
+ * activity, matching ADR-05's own description of the state ("erratic or slowed movement").
+ * A colonist with no in-progress execution (blocked, or between decisions) reads "blocked" —
+ * "motionless, not resting, not on task," per decision-loop §3's Blocked ambient signal.
+ */
+export function ambientStateFor(execution: Execution | null, stress: StressState): AmbientState {
+  if (isStressedState(stress)) return "stressed";
+  if (execution === null || execution.status !== "inProgress") return "blocked";
+  return TASK_AMBIENT_STATE[execution.taskId];
 }

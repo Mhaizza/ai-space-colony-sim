@@ -25,6 +25,7 @@ describe("active execution summary", () => {
     expect(summary.execution).toEqual(state.execution);
     expect(summary.currentGoal).toEqual(state.colonist.currentGoal);
     expect(summary.stress).toBe(state.colonist.stress.level);
+    expect(summary.ambientState).toBe("working"); // fixture is mid-shift, not stressed
     expect(summary.prng).toEqual(state.prng);
     expect(summary.foodStock).toBe(state.world.foodStock);
     for (const row of summary.needs) {

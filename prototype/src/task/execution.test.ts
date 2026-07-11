@@ -2,13 +2,14 @@
 // consequence application, deterministic execution, purity, immutability.
 
 import { describe, expect, it } from "vitest";
-import { TASK_TUNING } from "../config/tuning.js";
+import { STRESS_TUNING, TASK_TUNING } from "../config/tuning.js";
 import { createNeeds, isSatisfied } from "../colonist/needs.js";
 import { createWorld, consumeFood } from "../world/world.js";
 import { commitGoal, type Goal } from "../decision/goals.js";
 import { taskDefinition } from "./tasks.js";
 import {
   abortExecution,
+  ambientStateFor,
   applyProgressConsequences,
   beginExecution,
   completeExecution,
@@ -237,5 +238,37 @@ describe("workAtWorkstation lifecycle (a non-need-driven task) exercises the sam
     const exec = beginExecution(workTask, workGoal, 0);
     const progressed = progressExecution(exec, 480);
     expect(completeExecution(progressed).status).toBe("completed");
+  });
+});
+
+describe("REGRESSION (Copilot-confirmed): ambientStateFor — the seven-state observable registry #103 requires", () => {
+  const calm = { level: 0 };
+  const stressed = { level: STRESS_TUNING.stressedStateThreshold };
+
+  it("maps each in-progress task to its ambient state", () => {
+    expect(ambientStateFor(beginExecution(workTask, workGoal, 0), calm)).toBe("working");
+    expect(ambientStateFor(beginExecution(eatTask, eatGoal, 0), calm)).toBe("eating");
+    const restTask = taskDefinition("restAtBunk");
+    const restGoal = commitGoal({ source: "lowNeed", tier: 4, key: "lowNeed:rest", baseUrgency: 0.4, relatedNeed: "rest" }, "m", 0);
+    expect(ambientStateFor(beginExecution(restTask, restGoal, 0), calm)).toBe("resting");
+  });
+
+  it("no execution at all reads as blocked — 'motionless, not resting, not on task'", () => {
+    expect(ambientStateFor(null, calm)).toBe("blocked");
+  });
+
+  it("a non-inProgress execution (e.g. just completed or aborted) also reads as blocked, not its former task", () => {
+    const completed = completeExecution(beginExecution(workTask, workGoal, 0));
+    expect(ambientStateFor(completed, calm)).toBe("blocked");
+  });
+
+  it("stress overrides the task-based reading regardless of what is executing", () => {
+    expect(ambientStateFor(beginExecution(workTask, workGoal, 0), stressed)).toBe("stressed");
+    expect(ambientStateFor(null, stressed)).toBe("stressed");
+  });
+
+  it("is pure and deterministic", () => {
+    const exec = beginExecution(workTask, workGoal, 0);
+    expect(ambientStateFor(exec, calm)).toBe(ambientStateFor(exec, calm));
   });
 });

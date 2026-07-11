@@ -14,10 +14,11 @@
 import { NEEDS, type NeedId } from "../config/constants.js";
 import { dayOf, tickOfDay } from "../core/clock.js";
 import type { PrngState } from "../core/prng.js";
+import type { AmbientState } from "../config/constants.js";
 import type { ColonistIdentity } from "../colonist/colonist.js";
 import { isCritical, isLow, isSatisfied } from "../colonist/needs.js";
 import type { Goal } from "../decision/goals.js";
-import type { Execution } from "../task/execution.js";
+import { ambientStateFor, type Execution } from "../task/execution.js";
 import { periodAt, type ShiftPeriod } from "../world/policy.js";
 import type { DecisionLog, EventLog } from "../records/logs.js";
 import type { SimulationState } from "../simulation/tick.js";
@@ -41,6 +42,8 @@ export interface InspectionSummary {
   readonly colonist: ColonistIdentity;
   readonly needs: readonly NeedInspection[];
   readonly stress: number;
+  /** Tier-1 observable ambient state (ADR-05) — the seven-state registry, derived here rather than stored redundantly. */
+  readonly ambientState: AmbientState;
   readonly currentGoal: Goal | null;
   readonly suspendedGoal: Goal | null;
   readonly execution: Execution | null;
@@ -107,6 +110,7 @@ export function inspect(state: SimulationState, recentLimit = 10): InspectionSum
     colonist: detach(state.colonist.identity),
     needs,
     stress: state.colonist.stress.level,
+    ambientState: ambientStateFor(state.execution, state.colonist.stress),
     currentGoal: detach(state.colonist.currentGoal),
     suspendedGoal: detach(state.colonist.suspendedGoal),
     execution: detach(state.execution),
