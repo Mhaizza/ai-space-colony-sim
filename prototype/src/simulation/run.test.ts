@@ -37,6 +37,15 @@ describe("createInitialState", () => {
     const state = createInitialState(1, "c1", "Maya", [], [], roster);
     expect(state.roster).toEqual(roster);
   });
+
+  it("rejects roster ids that would make the initial state invalid", () => {
+    expect(() => createInitialState(1, "c1", "Maya", [], [], [{ id: "c1", name: "Clone", skills: [], baseTraits: [] }])).toThrow(
+      /duplicates the primary/i,
+    );
+    expect(() =>
+      createInitialState(1, "c1", "Maya", [], [], [{ id: "__proto__", name: "Prototype", skills: [], baseTraits: [] }]),
+    ).toThrow(/unsafe/i);
+  });
 });
 
 describe("run — advances by calling tick() once per BASE_TICKS_PER_STEP (review fix 2)", () => {

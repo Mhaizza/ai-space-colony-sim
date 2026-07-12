@@ -30,7 +30,7 @@ import type { ColonistIdentity, ColonistState } from "../colonist/colonist.js";
 import { withCurrentGoal, withMemory, withNeeds, withStress, withSuspendedGoal } from "../colonist/colonist.js";
 import { decayNeeds, isCritical, isLow, isSatisfied } from "../colonist/needs.js";
 import { considerConditionFormation, considerDeprivationFormation, considerRelationalFormation } from "../colonist/memory.js";
-import { applyAtrophy, type RelationshipStore } from "../colonist/relationships.js";
+import { applyAtrophy, assertSafeColonistId, type RelationshipStore } from "../colonist/relationships.js";
 import { evaluateStress, type StressContribution } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { ShiftPeriod, ShiftPolicy } from "../world/policy.js";
@@ -242,6 +242,7 @@ export function validateSimulationState(state: SimulationState): void {
   // primary colonist's and from every other roster entry's — a duplicate id would make a
   // relationship pair's "known colonist" ambiguous between the simulated colonist and a
   // roster placeholder (or between two roster placeholders).
+  assertSafeColonistId(state.colonist.identity.id, "colonist.identity.id");
   const rosterIds = state.roster.map((r) => r.id);
   if (rosterIds.includes(state.colonist.identity.id)) {
     throw new Error(
@@ -250,6 +251,7 @@ export function validateSimulationState(state: SimulationState): void {
   }
   const seenRosterIds = new Set<string>();
   for (const id of rosterIds) {
+    assertSafeColonistId(id, "roster id");
     if (seenRosterIds.has(id)) {
       throw new Error(`Invalid SimulationState: roster contains duplicate id "${id}".`);
     }

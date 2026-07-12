@@ -16,7 +16,7 @@ import { createRelationshipStore } from "../colonist/relationships.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld } from "../world/world.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
-import { createFreshMemoryBaselines, tick, type SimulationState, type TickEvent } from "./tick.js";
+import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState, type TickEvent } from "./tick.js";
 
 /**
  * Creates a fresh Stage 1 simulation: default station, default policy, one simulated colonist,
@@ -32,7 +32,7 @@ export function createInitialState(
   baseTraits: readonly TraitId[] = [],
   roster: readonly ColonistIdentity[] = [],
 ): SimulationState {
-  return {
+  const state: SimulationState = {
     clock: createClock(),
     world: createWorld(),
     policy: createDefaultPolicy(),
@@ -47,6 +47,8 @@ export function createInitialState(
     relationships: createRelationshipStore(),
     roster,
   };
+  validateSimulationState(state);
+  return state;
 }
 
 /** The full result of a headless run: final state plus the concatenated event trace across every tick. */

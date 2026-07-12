@@ -36,6 +36,11 @@ describe("canonical pair identity (ADR-20 D5)", () => {
     expect(() => canonicalPairId("alice", "alice")).toThrow(/self-pair/i);
   });
 
+  it("rejects property-key ids that would corrupt the plain-object store", () => {
+    expect(() => canonicalPairId("__proto__", "alice")).toThrow(/unsafe/i);
+    expect(() => canonicalPairId("alice", "constructor")).toThrow(/unsafe/i);
+  });
+
   it("is collision-safe: nested-object storage never confuses ids that would collide under a delimiter-joined key", () => {
     const recordAlicePair: PairRecord = {
       pair: ["alice", "bob:carol"],
@@ -471,6 +476,10 @@ describe("serialization + load validation (ADR-20 D8)", () => {
       const unknownId = validRecords();
       unknownId[0].pair = ["alice", "zeke"];
       expect(() => deserializeRelationshipStore(unknownId, KNOWN_IDS, CLOCK_TICK)).toThrow(/unknown colonist id/i);
+
+      const unsafeId = validRecords();
+      unsafeId[0].pair = ["__proto__", "alice"];
+      expect(() => deserializeRelationshipStore(unsafeId, new Set([...KNOWN_IDS, "__proto__"]), CLOCK_TICK)).toThrow(/unsafe/i);
     });
 
     it("3. missing directional affinity values", () => {

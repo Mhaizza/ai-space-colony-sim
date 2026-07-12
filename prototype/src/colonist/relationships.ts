@@ -18,6 +18,14 @@
 
 export type ColonistId = string;
 
+const UNSAFE_PROPERTY_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+export function assertSafeColonistId(id: ColonistId, field = "colonist id"): void {
+  if (UNSAFE_PROPERTY_KEYS.has(id)) {
+    throw new Error(`${field} "${id}" is unsafe as a relationship-store object key`);
+  }
+}
+
 /** Canonical pair identity: the ordered tuple [min(idA, idB), max(idA, idB)] (ADR-20 D5). */
 export type PairKey = readonly [ColonistId, ColonistId];
 
@@ -50,6 +58,8 @@ export function deriveRelationshipState(affinity: number): RelationshipState {
  * are invalid and are rejected here, not silently ignored (ADR-20 D5).
  */
 export function canonicalPairId(colonistAId: ColonistId, colonistBId: ColonistId): PairKey {
+  assertSafeColonistId(colonistAId, "colonistAId");
+  assertSafeColonistId(colonistBId, "colonistBId");
   if (colonistAId === colonistBId) {
     throw new Error("a relationship pair requires two distinct colonist ids; self-pairs are invalid (ADR-20 D5)");
   }
@@ -384,6 +394,11 @@ function expectArray(value: unknown, field: string): unknown[] {
 
 function expectStringId(value: unknown, field: string): ColonistId {
   if (typeof value !== "string") fail(`"${field}" must be a string`);
+  try {
+    assertSafeColonistId(value, field);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : `"${field}" is unsafe`);
+  }
   return value;
 }
 
