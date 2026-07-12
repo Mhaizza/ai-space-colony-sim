@@ -29,7 +29,8 @@ import type { PrngState } from "../core/prng.js";
 import type { ColonistState } from "../colonist/colonist.js";
 import { withCurrentGoal, withMemory, withNeeds, withStress, withSuspendedGoal } from "../colonist/colonist.js";
 import { decayNeeds, isCritical, isLow, isSatisfied } from "../colonist/needs.js";
-import { considerConditionFormation, considerDeprivationFormation } from "../colonist/memory.js";
+import { considerConditionFormation, considerDeprivationFormation, considerRelationalFormation } from "../colonist/memory.js";
+import { applyAtrophy, type RelationshipStore } from "../colonist/relationships.js";
 import { evaluateStress, type StressContribution } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { ShiftPeriod, ShiftPolicy } from "../world/policy.js";
@@ -88,6 +89,17 @@ export interface SimulationState {
   readonly deprivationBaselines: Readonly<Record<NeedId, number>>;
   readonly stressBaseline: number;
   /**
+   * Build step 8: the same cumulative-baseline pattern as `stressBaseline`, one entry per
+   * relationship partner this colonist has been observed to be party to — the affinity value
+   * (this colonist's own directional perspective) as of the last time a Relational memory
+   * formed from it (or as of first observing the pair). A single tick's atrophy movement is far
+   * below memory.ts's significance threshold by design; this is what lets cumulative drift
+   * across many ticks actually reach it, exactly like the need/stress baselines above. Keyed by
+   * the other colonist's id — never by `RelationshipStore`'s own keys/history, which this module
+   * still never reads directly.
+   */
+  readonly relationshipAffinityBaselines: Readonly<Record<string, number>>;
+  /**
    * Whether tick() has ever run for this state before (review fix, cross-referenced Copilot
    * finding). Starts `false` only in a genuinely fresh `createInitialState` result; every call
    * to tick() sets it `true` in its output, permanently. Gates the one-time "bootstrap"
@@ -103,6 +115,14 @@ export interface SimulationState {
    */
   readonly eventLog: EventLog;
   readonly decisionLog: DecisionLog;
+  /**
+   * M10 relationship store (ADR-20 D1/D8) — centralized sparse pair records. Written once per
+   * tick by the atrophy phase (build step 8) and read by candidate/decision-weight composition
+   * (build step 6); tick.ts never reads the store's materialized records or their past-
+   * interaction log directly beyond threading the store and atrophy's own fact-only
+   * consequences through — M10 remains the sole owner of the store's shape and rules.
+   */
+  readonly relationships: RelationshipStore;
 }
 
 /** One tick's trace — the "stable replay log": what was detected, decided, resolved, executed. */
@@ -122,7 +142,12 @@ export type TickEvent =
   | { readonly kind: "executionResumed"; readonly taskId: TaskId; readonly goalKey: string; readonly elapsedTicks: number }
   | { readonly kind: "decision"; readonly outcome: DecisionOutcome }
   | { readonly kind: "taskResolution"; readonly resolution: TaskResolution }
-  | { readonly kind: "memoryFormed"; readonly memoryType: "deprivation" | "condition"; readonly needId?: NeedId }
+  | {
+      readonly kind: "memoryFormed";
+      readonly memoryType: "deprivation" | "condition" | "relational";
+      readonly needId?: NeedId;
+      readonly otherId?: string;
+    }
   | { readonly kind: "stressEvaluated"; readonly contributions: readonly StressContribution[] };
 
 export interface TickResult {
@@ -219,11 +244,14 @@ function finish(state: SimulationState, events: readonly TickEvent[]): TickResul
   return { state: withLogs, events };
 }
 
-/** Fresh memory-formation baselines for a newly arrived colonist: needs at 1 (matches createNeeds), stress at 0 (matches createStress). */
-export function createFreshMemoryBaselines(): Pick<SimulationState, "deprivationBaselines" | "stressBaseline"> {
+/** Fresh memory-formation baselines for a newly arrived colonist: needs at 1 (matches createNeeds), stress at 0 (matches createStress), no relationship partners observed yet. */
+export function createFreshMemoryBaselines(): Pick<
+  SimulationState,
+  "deprivationBaselines" | "stressBaseline" | "relationshipAffinityBaselines"
+> {
   const deprivationBaselines = {} as Record<NeedId, number>;
   for (const id of NEEDS) deprivationBaselines[id] = 1;
-  return { deprivationBaselines, stressBaseline: 0 };
+  return { deprivationBaselines, stressBaseline: 0, relationshipAffinityBaselines: {} };
 }
 
 function detectNeedThresholdCrossings(
@@ -443,6 +471,44 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     stressBaseline = colonist.stress.level;
     events.push({ kind: "memoryFormed", memoryType: "condition" });
   }
+
+  // --- Phase: relationship atrophy (M10) + Relational memory formation (M9) — Stage 2 build
+  // step 8. Atrophy is the narrowest real per-tick source of relationship consequences: it
+  // needs no new social-action/interaction-trigger system (Stage 1 has none), mirroring how
+  // needs/stress decay every tick regardless of any task running. Consequences are fact-only
+  // (ADR-20 D7); this phase reads only a consequence's own delta/resulting-affinity fields,
+  // never the store's materialized records or their past-interaction log (M10 remains the sole
+  // owner of that shape and those rules). A single tick's atrophy movement is far below
+  // significance by design — exactly like need/stress decay — so `relationshipAffinityBaselines`
+  // tracks cumulative drift per partner, the same pattern as `stressBaseline` above:
+  // `considerRelationalFormation` is offered the full delta since the baseline every tick, and
+  // only a formed memory (or first sighting a pair) moves the baseline. Real single-colonist
+  // runs have no materialized pairs, so this is a no-op there — unchanged behavior — until a
+  // pair actually exists (e.g. a loaded save, or a future multi-colonist roster).
+  const atrophyResult = applyAtrophy(state.relationships, deltaTicks);
+  const relationships = atrophyResult.store;
+  let relationshipAffinityBaselines = state.relationshipAffinityBaselines;
+  for (const consequence of atrophyResult.consequences) {
+    const [min, max] = consequence.pair;
+    const ownerIsMin = min === colonist.identity.id;
+    const ownerIsMax = max === colonist.identity.id;
+    if (!ownerIsMin && !ownerIsMax) continue; // this colonist is not party to the pair
+    const otherId = ownerIsMin ? max : min;
+    const ownAffinityDelta = ownerIsMin ? consequence.minTowardMaxDelta : consequence.maxTowardMinDelta;
+    const currentAffinity = ownerIsMin ? consequence.resultingMinTowardMaxAffinity : consequence.resultingMaxTowardMinAffinity;
+    // First sighting of this partner: seed the baseline as of just before this tick's own
+    // movement, so cumulative drift is measured from there onward, not lost.
+    const baseline = relationshipAffinityBaselines[otherId] ?? currentAffinity - ownAffinityDelta;
+    const relationalFormed = considerRelationalFormation(memory, clock.tick, otherId, currentAffinity - baseline);
+    if (relationalFormed !== memory) {
+      memory = relationalFormed;
+      relationshipAffinityBaselines = { ...relationshipAffinityBaselines, [otherId]: currentAffinity };
+      events.push({ kind: "memoryFormed", memoryType: "relational", otherId });
+    } else {
+      relationshipAffinityBaselines = { ...relationshipAffinityBaselines, [otherId]: baseline };
+    }
+  }
+
   if (memory !== colonist.memory) {
     colonist = withMemory(colonist, memory);
   }
@@ -525,7 +591,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog,
+        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships,
       },
       events,
     );
@@ -546,7 +612,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog,
+        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships,
       },
       events,
     );
@@ -568,7 +634,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
       suspendedExecution = suspended.suspendedExecution;
     }
 
-    const decision = decideFromCandidates(candidates, colonist, prng, clock.tick, snapshot);
+    const decision = decideFromCandidates(candidates, colonist, prng, clock.tick, snapshot, relationships);
     events.push({ kind: "decision", outcome: decision });
     // Every higher-tier candidate the filter found non-actionable and fell through — retained
     // in decision.blockedCandidates (decisionLog persists the full outcome already), and ALSO
@@ -592,7 +658,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   return finish(
     {
       clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-      deprivationBaselines, stressBaseline, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog,
+      deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships,
     },
     events,
   );

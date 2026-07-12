@@ -24,6 +24,9 @@ import type { WorldSnapshot } from "../world/snapshot.js";
  * candidates to tasks; this module stops before that boundary, per this build step's scope).
  * `relatedNeed` is present only for need-driven sources (criticalNeed, lowNeed); it is what
  * lets weight composition match Deprivation memories to this candidate (decision-loop §8).
+ * `relatedColonistId` is present only for social voluntary candidates (one per nearby
+ * colonist); it is what lets weight composition read that pair's relationship perspective
+ * (ADR-20 D2) without weights.ts ever touching WorldSnapshot itself.
  */
 export interface GoalCandidate {
   readonly source: GoalSource;
@@ -32,6 +35,7 @@ export interface GoalCandidate {
   readonly key: string;
   readonly baseUrgency: number;
   readonly relatedNeed?: NeedId;
+  readonly relatedColonistId?: string;
 }
 
 /**
@@ -109,22 +113,30 @@ function generateLowNeedCandidates(needs: NeedsState, traits: readonly TraitId[]
 }
 
 /**
- * Source 5 — trait-weighted voluntary behavior (ADR-01 tier 5). Stage 1's only voluntary
- * candidate is unstructured idle/rest presence during free time — the social task class is
- * empty until ADR-18's vocabulary is wired in (a later stage), so this is the sole tier-5
- * candidate this generator can produce today. Trait weighting itself happens in weight
- * composition (weights.ts), never here — generation names the candidate, not its appeal.
+ * Source 5 — trait-weighted voluntary behavior (ADR-01 tier 5). Stage 1's baseline voluntary
+ * candidate is unstructured idle/rest presence during free time. Stage 2 build step 6 adds one
+ * social candidate per snapshot-reported nearby colonist (ADR-20 D3: candidate enumeration is
+ * snapshot-driven — this reads `nearbyColonists`, never the relationship store — a colonist
+ * never interacted with is exactly as reachable as one with a long history). Trait/relationship
+ * weighting itself happens in weight composition (weights.ts), never here — generation names
+ * the candidate, not its appeal.
  */
 function generateVoluntaryCandidates(snapshot: WorldSnapshot): readonly GoalCandidate[] {
   if (snapshot.currentPeriod !== "free") return [];
-  return [
-    {
-      source: "voluntary",
-      tier: GOAL_SOURCE_TIER.voluntary,
-      key: "voluntary:idle",
-      baseUrgency: WEIGHT_TUNING.voluntaryBaseWeight,
-    },
-  ];
+  const idle: GoalCandidate = {
+    source: "voluntary",
+    tier: GOAL_SOURCE_TIER.voluntary,
+    key: "voluntary:idle",
+    baseUrgency: WEIGHT_TUNING.voluntaryBaseWeight,
+  };
+  const social: GoalCandidate[] = snapshot.nearbyColonists.map((other) => ({
+    source: "voluntary",
+    tier: GOAL_SOURCE_TIER.voluntary,
+    key: `voluntary:social:${other.id}`,
+    baseUrgency: WEIGHT_TUNING.voluntaryBaseWeight,
+    relatedColonistId: other.id,
+  }));
+  return [idle, ...social];
 }
 
 /** Generates every candidate from the five closed sources. Pure; the source vocabulary is closed. */
@@ -160,6 +172,8 @@ export interface Goal {
    *  parsing `key`. Undefined for sources that never carry one (shiftAssignment, voluntary,
    *  survivalCondition). */
   readonly relatedNeed?: NeedId;
+  /** Carried from social voluntary candidates so later task/action layers never parse `key`. */
+  readonly relatedColonistId?: string;
   readonly status: GoalStatus;
   readonly motivation: string;
   readonly adoptedAtTick: number;
@@ -172,6 +186,7 @@ export function commitGoal(candidate: GoalCandidate, motivation: string, current
     tier: candidate.tier,
     key: candidate.key,
     relatedNeed: candidate.relatedNeed,
+    relatedColonistId: candidate.relatedColonistId,
     status: "active",
     motivation,
     adoptedAtTick: currentTick,

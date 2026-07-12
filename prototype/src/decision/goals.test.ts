@@ -5,7 +5,7 @@ import { GOAL_SOURCES } from "../config/constants.js";
 import { createClock, advance } from "../core/clock.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld } from "../world/world.js";
-import { buildSnapshot, type WorldSnapshot } from "../world/snapshot.js";
+import { buildSnapshot, type ObservableColonist, type WorldSnapshot } from "../world/snapshot.js";
 import { createNeeds, decayNeeds, type NeedsState } from "../colonist/needs.js";
 import {
   abandonGoal,
@@ -38,6 +38,17 @@ describe("source 1 — station survival (tier 1)", () => {
   it("generates no candidates in Stage 1 (no survival-condition data in WorldSnapshot) — structurally present, currently always empty", () => {
     const candidates = generateCandidates(workSnapshot, createNeeds());
     expect(candidates.some((c) => c.source === "survivalCondition")).toBe(false);
+  });
+});
+
+describe("social candidate target preservation", () => {
+  it("commitGoal carries relatedColonistId forward without forcing later layers to parse key", () => {
+    const goal = commitGoal(
+      { source: "voluntary", tier: 5, key: "voluntary:social:zeke", baseUrgency: 0.2, relatedColonistId: "zeke" },
+      "social motivation",
+      100,
+    );
+    expect(goal.relatedColonistId).toBe("zeke");
   });
 });
 
@@ -106,6 +117,37 @@ describe("source 5 — trait-weighted voluntary behavior (tier 5)", () => {
   it("generates no candidate outside the free period", () => {
     expect(generateCandidates(workSnapshot, createNeeds()).some((c) => c.source === "voluntary")).toBe(false);
     expect(generateCandidates(restSnapshot, createNeeds()).some((c) => c.source === "voluntary")).toBe(false);
+  });
+});
+
+describe("source 5 — social voluntary candidates from nearby colonists (Stage 2 build step 6, ADR-20 D3)", () => {
+  const nearby: readonly ObservableColonist[] = [
+    { id: "zeke", ambientState: "idle" },
+    { id: "yara", ambientState: "working" },
+  ];
+
+  it("generates one tier-5 social candidate per snapshot-reported nearby colonist, tagged with relatedColonistId", () => {
+    const snapshot = buildSnapshot(advance(createClock(), policy.workTicks + policy.restTicks), policy, world, nearby);
+    const candidates = generateCandidates(snapshot, createNeeds());
+    const social = candidates.filter((c) => c.relatedColonistId !== undefined);
+    expect(social).toHaveLength(2);
+    expect(social.map((c) => c.relatedColonistId).sort()).toEqual(["yara", "zeke"]);
+    expect(social.every((c) => c.source === "voluntary" && c.tier === 5)).toBe(true);
+  });
+
+  it("a never-interacted nearby colonist is still reachable as a candidate — generation never consults the relationship store", () => {
+    const snapshot = buildSnapshot(advance(createClock(), policy.workTicks + policy.restTicks), policy, world, nearby);
+    const candidates = generateCandidates(snapshot, createNeeds());
+    expect(candidates.some((c) => c.relatedColonistId === "zeke")).toBe(true);
+  });
+
+  it("generates no social candidates outside the free period, even with nearby colonists present", () => {
+    const snapshot = buildSnapshot(createClock(), policy, world, nearby);
+    expect(generateCandidates(snapshot, createNeeds()).some((c) => c.relatedColonistId !== undefined)).toBe(false);
+  });
+
+  it("generates no social candidates when no nearby colonists are reported (real single-colonist runs today)", () => {
+    expect(generateCandidates(freeSnapshot, createNeeds()).some((c) => c.relatedColonistId !== undefined)).toBe(false);
   });
 });
 

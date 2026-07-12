@@ -6,7 +6,22 @@ import { createInitialState, run } from "../simulation/run.js";
 import type { SimulationState } from "../simulation/tick.js";
 import type { EventRecord } from "../records/logs.js";
 import { deserialize, serialize } from "../core/serialization.js";
+import { applyInteraction, createRelationshipStore, type RelationshipStore } from "../colonist/relationships.js";
 import { compareTraces, verifyReplay } from "./replay.js";
+
+/** A non-empty relationship store — for tests proving the relationship slice is actually covered, not just trivially empty on both sides. */
+function sampleRelationshipStore(): RelationshipStore {
+  return applyInteraction(createRelationshipStore(), {
+    colonistAId: "c1",
+    colonistBId: "zeke",
+    tick: 0,
+    changeSource: "sharedTaskCompletion",
+    initiatorId: "c1",
+    responderId: "zeke",
+    aTowardBDelta: 12,
+    bTowardADelta: 8,
+  }).store;
+}
 
 function completedRun(seed: number, ticks: number): { initial: SimulationState; final: SimulationState } {
   const initial = createInitialState(seed, "c1", "Maya", ["engineering"]);
@@ -217,6 +232,57 @@ describe("terminal-state verification (final review fix)", () => {
     const final = run(loaded, 100).finalState;
     expect(verifyReplay(loaded, final).kind).toBe("match");
     expect(verifyReplay(initial, final).kind).toBe("match");
+  });
+
+  it("a relationship store populated identically on both sides still matches (Stage 2 build steps 5, 8)", () => {
+    const initial = createInitialState(1, "c1", "Maya", ["engineering"]);
+    const withRelationships: SimulationState = { ...initial, relationships: sampleRelationshipStore() };
+    const final = run(withRelationships, 100).finalState;
+    // Build step 8: tick.ts applies atrophy every tick, so a materialized pair (c1/zeke,
+    // interacted at tick 0) actually decays over 100 real ticks — the store is NOT unchanged.
+    // What must still hold is determinism: replaying the same run reproduces the exact same
+    // decayed terminal state.
+    expect(final.relationships).not.toEqual(withRelationships.relationships);
+    expect(verifyReplay(withRelationships, final).kind).toBe("match");
+  });
+
+  it("replay stays deterministic once cumulative atrophy actually forms a Relational memory (Stage 2 build step 8)", () => {
+    const initial = createInitialState(1, "c1", "Maya", ["engineering"]);
+    const withRelationships: SimulationState = { ...initial, relationships: sampleRelationshipStore() };
+    // 800 ticks is enough for atrophyPerTick (0.02) to cumulatively cross relationshipChangeSignificance (15).
+    const final = run(withRelationships, 800).finalState;
+    expect(final.colonist.memory.some((e) => e.type === "relational")).toBe(true); // sanity: it really formed
+    expect(verifyReplay(withRelationships, final).kind).toBe("match");
+  });
+
+  it("identical logs but a modified relationship store fails at its exact path (Stage 2 build step 5)", () => {
+    const { initial, final } = completedRun(1, 100);
+    expect(final.relationships).toEqual(createRelationshipStore()); // sanity: nothing materialized in a real run yet
+    const tampered: SimulationState = { ...final, relationships: sampleRelationshipStore() };
+    const result = verifyReplay(initial, tampered);
+    expect(result.kind).toBe("divergence");
+    if (result.kind === "divergence") {
+      expect(result.log).toBe("state");
+      expect(result.path).toBe("relationships.pairs.c1");
+    }
+  });
+
+  it("identical logs but a modified relationshipAffinityBaselines fails at its exact path (Stage 2 build step 8)", () => {
+    const initial = createInitialState(1, "c1", "Maya", ["engineering"]);
+    const withRelationships: SimulationState = { ...initial, relationships: sampleRelationshipStore() };
+    const final = run(withRelationships, 800).finalState;
+    const baseline = final.relationshipAffinityBaselines.zeke;
+    expect(baseline).toBeDefined(); // sanity: the partner really was observed
+    const tampered: SimulationState = {
+      ...final,
+      relationshipAffinityBaselines: { ...final.relationshipAffinityBaselines, zeke: baseline! + 1 },
+    };
+    const result = verifyReplay(withRelationships, tampered);
+    expect(result.kind).toBe("divergence");
+    if (result.kind === "divergence") {
+      expect(result.log).toBe("state");
+      expect(result.path).toBe("relationshipAffinityBaselines.zeke");
+    }
   });
 });
 

@@ -37,6 +37,7 @@ const composed: ComposedWeight = {
   traitContributions: [{ traitId: "driven", tilt: 1.1 }],
   memoryContributions: [{ memoryId: 0, influence: 0.3 }],
   stressContributions: [],
+  relationshipContributions: [],
 };
 
 const goal: Goal = {

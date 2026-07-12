@@ -12,6 +12,7 @@ import { createPrng } from "../core/prng.js";
 import { BASE_TICKS_PER_STEP } from "../config/constants.js";
 import { createColonist } from "../colonist/colonist.js";
 import type { TraitId } from "../colonist/traits.js";
+import { createRelationshipStore } from "../colonist/relationships.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld } from "../world/world.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
@@ -37,6 +38,7 @@ export function createInitialState(
     hasBootstrapped: false,
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
+    relationships: createRelationshipStore(),
   };
 }
 

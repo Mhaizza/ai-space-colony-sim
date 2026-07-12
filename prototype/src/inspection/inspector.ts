@@ -17,6 +17,7 @@ import type { PrngState } from "../core/prng.js";
 import type { AmbientState } from "../config/constants.js";
 import type { ColonistIdentity } from "../colonist/colonist.js";
 import { isCritical, isLow, isSatisfied } from "../colonist/needs.js";
+import { pairView, type PairView, type RelationshipStore } from "../colonist/relationships.js";
 import type { Goal } from "../decision/goals.js";
 import { ambientStateFor, type Execution } from "../task/execution.js";
 import { periodAt, type ShiftPeriod } from "../world/policy.js";
@@ -52,6 +53,14 @@ export interface InspectionSummary {
   readonly foodStock: number;
   readonly recentEvents: EventLog;
   readonly recentDecisions: DecisionLog;
+  /**
+   * Both directional perspectives for every currently materialized pair (ADR-20 D2's
+   * sanctioned inspector use of `pairView`), in canonical pair order. Named states are derived
+   * fresh by `pairView` on every call — never stored here or anywhere else (ADR-20 Required
+   * Invariant 4). Real single-colonist runs materialize nothing yet, so this is always `[]`
+   * until a later, separately-approved slice wires candidate/decision consumption.
+   */
+  readonly relationships: readonly PairView[];
 }
 
 function assertLimit(limit: number): void {
@@ -69,6 +78,23 @@ function assertLimit(limit: number): void {
 function detach<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * Both directional perspectives for every materialized pair, in canonical pair order
+ * (lexicographic by [min, max], matching ADR-20 D5's serialization order). Read-only: calls
+ * only `pairView`, never a write path, and never touches the store beyond enumerating its keys.
+ */
+function allRelationshipPairViews(store: RelationshipStore): readonly PairView[] {
+  const minIds = Object.keys(store.pairs).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const views: PairView[] = [];
+  for (const min of minIds) {
+    const maxIds = Object.keys(store.pairs[min]!).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    for (const max of maxIds) {
+      views.push(pairView(store, min, max));
+    }
+  }
+  return views;
 }
 
 /** The last `limit` event records as detached copies, in their original append order. Pure. */
@@ -119,6 +145,7 @@ export function inspect(state: SimulationState, recentLimit = 10): InspectionSum
     foodStock: state.world.foodStock,
     recentEvents: recentEvents(state, recentLimit),
     recentDecisions: recentDecisions(state, recentLimit),
+    relationships: detach(allRelationshipPairViews(state.relationships)),
   };
 }
 

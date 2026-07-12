@@ -9,8 +9,35 @@ import type { SimulationState } from "../simulation/tick.js";
 import { setModuleFunctional } from "../world/world.js";
 import { suspendGoal, type Goal } from "../decision/goals.js";
 import type { Execution } from "../task/execution.js";
+import { applyInteraction, createRelationshipStore, type RelationshipStore } from "../colonist/relationships.js";
 import { inspect, recentDecisions, recentEvents, summarizeReplay } from "./inspector.js";
 import { verifyReplay } from "../replay/replay.js";
+
+/** Two materialized pairs sharing colonist "c1" (the real run's owner), asymmetric in both directions. */
+function sampleRelationshipStore(): RelationshipStore {
+  let store = createRelationshipStore();
+  store = applyInteraction(store, {
+    colonistAId: "c1",
+    colonistBId: "zeke",
+    tick: 0,
+    changeSource: "sharedTaskCompletion",
+    initiatorId: "c1",
+    responderId: "zeke",
+    aTowardBDelta: 15,
+    bTowardADelta: 9,
+  }).store;
+  store = applyInteraction(store, {
+    colonistAId: "c1",
+    colonistBId: "yara",
+    tick: 0,
+    changeSource: "directConflict",
+    initiatorId: "yara",
+    responderId: "c1",
+    aTowardBDelta: -20,
+    bTowardADelta: -12,
+  }).store;
+  return store;
+}
 
 describe("active execution summary", () => {
   it("surfaces the running execution, current goal, needs, stress, and PRNG state as direct reads", () => {
@@ -228,5 +255,75 @@ describe("replay verification summary", () => {
       expect(line).toContain(String(result.index));
       expect(line).toContain(result.recordKind);
     }
+  });
+});
+
+describe("relationship pair inspection (Stage 2 build step 5, ADR-20 D2)", () => {
+  it("still works with existing Stage 1 behavior: a real run materializes nothing, so relationships is empty", () => {
+    const state = run(createInitialState(1, "c1", "Maya", ["engineering"]), 200).finalState;
+    const summary = inspect(state);
+    expect(summary.relationships).toEqual([]);
+  });
+
+  it("renders both directional perspectives for every materialized pair, in canonical pair order", () => {
+    const base = createInitialState(1, "c1", "Maya");
+    const state: SimulationState = { ...base, relationships: sampleRelationshipStore() };
+
+    const summary = inspect(state);
+
+    expect(summary.relationships).toEqual([
+      {
+        pair: ["c1", "yara"],
+        minTowardMax: { affinity: -20, state: "tense" }, // c1 toward yara
+        maxTowardMin: { affinity: -12, state: "tense" }, // yara toward c1
+        history: expect.any(Array),
+        lastInteractionTick: 0,
+      },
+      {
+        pair: ["c1", "zeke"],
+        minTowardMax: { affinity: 15, state: "neutral" }, // c1 toward zeke
+        maxTowardMin: { affinity: 9, state: "acquainted" }, // zeke toward c1
+        history: expect.any(Array),
+        lastInteractionTick: 0,
+      },
+    ]);
+  });
+
+  it("does not mutate the relationship store, and does not store or derive a named state anywhere in it", () => {
+    const base = createInitialState(1, "c1", "Maya");
+    const populated = sampleRelationshipStore();
+    const state: SimulationState = { ...base, relationships: populated };
+    const beforeCall = JSON.parse(JSON.stringify(populated));
+
+    inspect(state);
+    inspect(state); // twice — no caching side effect either
+
+    expect(state.relationships).toEqual(beforeCall);
+    // The stored record itself carries only M10's minimal D6 fields — no "state"/named-state
+    // field was ever written into it as a side effect of rendering one.
+    const record = state.relationships.pairs["c1"]!["zeke"]!;
+    expect(Object.keys(record).sort()).toEqual(
+      ["history", "lastInteractionTick", "maxTowardMinAffinity", "minTowardMaxAffinity", "pair"].sort(),
+    );
+  });
+
+  it("detached: mutating the returned relationships array never aliases back into the state", () => {
+    const base = createInitialState(1, "c1", "Maya");
+    const state: SimulationState = { ...base, relationships: sampleRelationshipStore() };
+    const originalAffinity = state.relationships.pairs["c1"]!["zeke"]!.minTowardMaxAffinity;
+
+    const summary = inspect(state);
+    const mutableRelationships = summary.relationships as unknown as { minTowardMax: { affinity: number } }[] & unknown[];
+    mutableRelationships[0]!.minTowardMax.affinity = 999999;
+    (mutableRelationships as unknown[]).push({
+      pair: ["tampered", "tampered2"],
+      minTowardMax: { affinity: 0, state: "acquainted" },
+      maxTowardMin: { affinity: 0, state: "acquainted" },
+      history: [],
+      lastInteractionTick: null,
+    });
+
+    expect(state.relationships.pairs["c1"]!["zeke"]!.minTowardMaxAffinity).toBe(originalAffinity);
+    expect(Object.keys(state.relationships.pairs)).toEqual(["c1"]);
   });
 });

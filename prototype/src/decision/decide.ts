@@ -16,6 +16,7 @@ import { next } from "../core/prng.js";
 import type { ColonistState } from "../colonist/colonist.js";
 import type { WorldSnapshot } from "../world/snapshot.js";
 import { candidateActionability } from "../task/tasks.js";
+import { createRelationshipStore, type RelationshipStore } from "../colonist/relationships.js";
 import { commitGoal, generateCandidates, type Goal, type GoalCandidate } from "./goals.js";
 import { composeWeight, type ComposedWeight } from "./weights.js";
 
@@ -220,6 +221,7 @@ export function decideFromCandidates(
   prng: PrngState,
   currentTick: number,
   snapshot: WorldSnapshot,
+  relationships: RelationshipStore = createRelationshipStore(),
 ): DecisionOutcome {
   const { winner, blockedCandidates, fallback } = filterToWinningTier(candidates, colonist.identity.skills, snapshot);
   if (winner === null) {
@@ -263,7 +265,7 @@ export function decideFromCandidates(
   }
 
   const composedWeights = winner.candidates.map((c) =>
-    composeWeight(c, colonist.identity.baseTraits, colonist.memory, colonist.stress, currentTick),
+    composeWeight(c, colonist.identity.baseTraits, colonist.memory, colonist.stress, currentTick, relationships, colonist.identity.id),
   );
 
   const { winnerIndex, draws, prngState } = selectWeighted(
@@ -294,7 +296,8 @@ export function decideNext(
   snapshot: WorldSnapshot,
   prng: PrngState,
   currentTick: number,
+  relationships: RelationshipStore = createRelationshipStore(),
 ): DecisionOutcome {
   const candidates = generateCandidates(snapshot, colonist.needs, colonist.identity.baseTraits);
-  return decideFromCandidates(candidates, colonist, prng, currentTick, snapshot);
+  return decideFromCandidates(candidates, colonist, prng, currentTick, snapshot, relationships);
 }

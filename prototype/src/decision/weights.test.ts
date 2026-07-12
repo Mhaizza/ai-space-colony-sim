@@ -1,10 +1,22 @@
 // M11 weight composition tests — bounded, decomposable, order-independent, bound-never-veto,
-// per-family contribution coverage (traits, memory, stress, empty relationships).
+// per-family contribution coverage (traits, memory, stress, relationships). Stage 2 build step
+// 6 wires the relationships family to real `perspective` reads for social voluntary candidates
+// (those carrying `relatedColonistId`) — every other candidate still composes with an identity
+// relationships factor, since `relationshipContributions` returns `[]` when there is no related
+// colonist to read a perspective for.
 
+// @ts-expect-error — no @types/node in this zero-runtime-dependency prototype (Stage 1 plan);
+// Node/Vitest resolve this builtin at runtime regardless of the missing type declarations.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { WEIGHT_TUNING } from "../config/tuning.js";
 import { createStress, type StressState } from "../colonist/stress.js";
 import { considerDeprivationFormation, createMemoryPool, type MemoryPool } from "../colonist/memory.js";
+import { createClock } from "../core/clock.js";
+import { createDefaultPolicy } from "../world/policy.js";
+import { createWorld } from "../world/world.js";
+import { buildSnapshot, type ObservableColonist } from "../world/snapshot.js";
+import { applyInteraction, createRelationshipStore } from "../colonist/relationships.js";
 import type { GoalCandidate } from "./goals.js";
 import {
   applyMemoryContributions,
@@ -20,24 +32,68 @@ const lowNeedHunger: GoalCandidate = { source: "lowNeed", tier: 4, key: "lowNeed
 const criticalHunger: GoalCandidate = { source: "criticalNeed", tier: 2, key: "criticalNeed:hunger", baseUrgency: 0.9, relatedNeed: "hunger" };
 const shiftAssignment: GoalCandidate = { source: "shiftAssignment", tier: 3, key: "shiftAssignment:work", baseUrgency: WEIGHT_TUNING.assignmentBaseWeight };
 const voluntary: GoalCandidate = { source: "voluntary", tier: 5, key: "voluntary:idle", baseUrgency: WEIGHT_TUNING.voluntaryBaseWeight };
+const socialWithZeke: GoalCandidate = {
+  source: "voluntary",
+  tier: 5,
+  key: "voluntary:social:zeke",
+  baseUrgency: WEIGHT_TUNING.voluntaryBaseWeight,
+  relatedColonistId: "zeke",
+};
 
 const noStress = createStress();
 const highStress: StressState = { level: 0.9 };
 const emptyMemory: MemoryPool = createMemoryPool();
 
-describe("relationships family — always empty at Stage 1", () => {
-  it("relationshipContributions is always an empty list", () => {
-    expect(relationshipContributions()).toEqual([]);
+describe("relationships family (Stage 2 build step 6) — real perspective reads", () => {
+  it("a candidate with no relatedColonistId never produces a contribution", () => {
+    expect(relationshipContributions(createRelationshipStore(), "c1", lowNeedHunger)).toEqual([]);
   });
 
-  it("applying it leaves the base weight exactly unchanged", () => {
-    expect(applyRelationshipContributions(0.5)).toBe(0.5);
-    expect(applyRelationshipContributions(1)).toBe(1);
+  it("a never-interacted related colonist still produces a contribution, via the D4 default", () => {
+    const contributions = relationshipContributions(createRelationshipStore(), "c1", socialWithZeke);
+    expect(contributions).toEqual([{ otherId: "zeke", affinity: 0 }]);
   });
 
-  it("composeWeight's relationships factor is always exactly 1", () => {
+  it("applying an empty contribution list leaves the base weight exactly unchanged", () => {
+    expect(applyRelationshipContributions(0.5, [])).toBe(0.5);
+    expect(applyRelationshipContributions(1, [])).toBe(1);
+  });
+
+  it("a positive affinity tilts the composed weight above a never-interacted candidate's", () => {
+    const { store } = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 30,
+      bTowardADelta: 30,
+    });
+    const neutral = composeWeight(socialWithZeke, [], emptyMemory, noStress, 0, createRelationshipStore(), "c1");
+    const positive = composeWeight(socialWithZeke, [], emptyMemory, noStress, 0, store, "c1");
+    expect(positive.relationships).toBeGreaterThan(neutral.relationships);
+  });
+
+  it("composeWeight's relationships factor is exactly 1 for a candidate with no relatedColonistId", () => {
     const w = composeWeight(lowNeedHunger, [], emptyMemory, noStress, 0);
     expect(w.relationships).toBe(1);
+  });
+
+  it("relationships multiplier stays within [familyTiltFloor, familyTiltCap] even at extreme affinity", () => {
+    const { store } = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 1000,
+      bTowardADelta: 1000,
+    });
+    const applied = applyRelationshipContributions(1, relationshipContributions(store, "c1", socialWithZeke));
+    expect(applied).toBeGreaterThanOrEqual(WEIGHT_TUNING.familyTiltFloor);
+    expect(applied).toBeLessThanOrEqual(WEIGHT_TUNING.familyTiltCap);
   });
 });
 
@@ -212,5 +268,35 @@ describe("purity and determinism", () => {
     composeWeight(lowNeedHunger, ["driven"], memory, highStress, 5);
     expect(memory).toEqual(memorySnapshot);
     expect(highStress).toEqual(stressSnapshot);
+  });
+});
+
+describe("read-boundary regression: pairView stays off the decision path (ADR-20 D2)", () => {
+  it("this module's source never references pairView — the system-level read is never a decision input", () => {
+    const source = readFileSync(new URL("./weights.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/pairView/);
+  });
+
+  it("this module's source calls perspective, not pairView, for the relationships family", () => {
+    const source = readFileSync(new URL("./weights.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/\bperspective\(/);
+  });
+});
+
+describe("decomposition remains exact with a populated snapshot in scope (Stage 2 build step 6)", () => {
+  it("a 3-colonist-scale WorldSnapshot in hand does not change decomposition for a candidate with no relatedColonistId", () => {
+    const nearbyColonists: readonly ObservableColonist[] = [
+      { id: "bob", ambientState: "working" },
+      { id: "carol", ambientState: "resting" },
+    ];
+    const snapshot = buildSnapshot(createClock(), createDefaultPolicy(), createWorld(), nearbyColonists);
+    expect(snapshot.nearbyColonists).toHaveLength(2); // sanity: the scenario really is 3-colonist scale
+
+    const memory = considerDeprivationFormation(emptyMemory, 0, "hunger", 1, 0);
+    const w = composeWeight(lowNeedHunger, ["driven"], memory, highStress, 5);
+    const reconstructed = w.base * w.traits * w.memory * w.stress * w.relationships;
+
+    expect(w.composed).toBeCloseTo(reconstructed, 10);
+    expect(w.relationships).toBe(1); // lowNeedHunger has no relatedColonistId, so the family stays identity
   });
 });

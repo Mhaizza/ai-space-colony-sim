@@ -17,6 +17,7 @@ import {
 } from "../colonist/traits.js";
 import { influence, type MemoryPool } from "../colonist/memory.js";
 import { exceedsTaskAcceptanceThreshold, isStressedState, type StressState } from "../colonist/stress.js";
+import { createRelationshipStore, perspective, type ColonistId, type RelationshipStore } from "../colonist/relationships.js";
 import type { GoalCandidate } from "./goals.js";
 
 const FAMILY_TILT_FLOOR = WEIGHT_TUNING.familyTiltFloor;
@@ -91,16 +92,40 @@ export function applyStressWeightContributions(base: number, contributions: read
   return base * clamp(multiplier, FAMILY_TILT_FLOOR, FAMILY_TILT_CAP);
 }
 
-// --- Relationships family: structurally present, empty at Stage 1 (AQ-2 blocks M10). ---
+// --- Relationships family (Stage 2 build step 6): real M10 reads via `perspective` only. ---
 
-/** Always empty at Stage 1 — M10 does not exist (AQ-2 open). The family exists structurally regardless. */
-export function relationshipContributions(): readonly [] {
-  return [];
+/** One related colonist's contribution — the owner's directional affinity toward them (ADR-20 D2). */
+export interface RelationshipContribution {
+  readonly otherId: ColonistId;
+  readonly affinity: number;
 }
 
-/** Identity at Stage 1: multiplier is always exactly 1 — no relationship data exists to tilt with. */
-export function applyRelationshipContributions(base: number): number {
-  return base;
+/**
+ * Reads `ownerId`'s perspective toward the candidate's related colonist, when it has one
+ * (social voluntary candidates only — decision-loop §8-style matching). Decision weighting is
+ * owner-direction-only by construction (ADR-20 D2) — the system-level both-directions read is
+ * never called here — and an unmaterialized pair resolves to the D4 default via `perspective`
+ * itself, so a never-interacted candidate still composes.
+ */
+export function relationshipContributions(
+  store: RelationshipStore,
+  ownerId: ColonistId,
+  candidate: GoalCandidate,
+): readonly RelationshipContribution[] {
+  if (candidate.relatedColonistId === undefined) return [];
+  const { affinity } = perspective(store, ownerId, candidate.relatedColonistId);
+  return [{ otherId: candidate.relatedColonistId, affinity }];
+}
+
+/** Applies relationship contributions as a bounded tilt: 1 + (summed affinity/100 × scale), clamped. */
+export function applyRelationshipContributions(base: number, contributions: readonly RelationshipContribution[]): number {
+  const totalAffinity = contributions.reduce((sum, c) => sum + c.affinity, 0);
+  const multiplier = clamp(
+    1 + (totalAffinity / 100) * WEIGHT_TUNING.relationshipWeightTiltScale,
+    FAMILY_TILT_FLOOR,
+    FAMILY_TILT_CAP,
+  );
+  return base * multiplier;
 }
 
 // --- Composition ---
@@ -125,12 +150,16 @@ export interface ComposedWeight {
   readonly traitContributions: readonly WeightTiltContribution[];
   readonly memoryContributions: readonly MemoryContribution[];
   readonly stressContributions: readonly StressWeightContribution[];
+  readonly relationshipContributions: readonly RelationshipContribution[];
 }
 
 /**
  * Composes one candidate's weight from base urgency and the four modifier families. Only ever
  * called for candidates in the winning tier at tiers 2–5 — tier 1 is composed-immune by
  * construction: decide.ts never calls this function for a tier-1 candidate (ADR-01; locked #25).
+ * `relationships`/`ownerId` default to an empty store/id so every existing caller (real runs
+ * with no relationship store yet, and every test predating Stage 2 build step 6) composes
+ * exactly as before — a candidate with no `relatedColonistId` never reads the store at all.
  */
 export function composeWeight(
   candidate: GoalCandidate,
@@ -138,6 +167,8 @@ export function composeWeight(
   memory: MemoryPool,
   stress: StressState,
   currentTick: number,
+  relationships: RelationshipStore = createRelationshipStore(),
+  ownerId: ColonistId = "",
 ): ComposedWeight {
   const base = candidate.baseUrgency * WEIGHT_TUNING.baseScale;
 
@@ -150,7 +181,8 @@ export function composeWeight(
   const stressContributions = stressWeightContributions(stress, candidate);
   const stressMultiplier = applyStressWeightContributions(1, stressContributions);
 
-  const relationshipsMultiplier = applyRelationshipContributions(1);
+  const relContributions = relationshipContributions(relationships, ownerId, candidate);
+  const relationshipsMultiplier = applyRelationshipContributions(1, relContributions);
 
   const composed = base * traitsMultiplier * memoryMultiplier * stressMultiplier * relationshipsMultiplier;
 
@@ -167,5 +199,6 @@ export function composeWeight(
     traitContributions,
     memoryContributions: memContributions,
     stressContributions,
+    relationshipContributions: relContributions,
   };
 }
