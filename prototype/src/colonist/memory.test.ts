@@ -1,11 +1,16 @@
 // M9 Memory System tests — formation, immutable impact, recency decay, bounded pool,
 // lowest-influence eviction, determinism, purity.
 
+// @ts-expect-error — no @types/node in this zero-runtime-dependency prototype (Stage 1 plan);
+// Node/Vitest resolve this builtin at runtime regardless of the missing type declarations.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MEMORY_TUNING } from "../config/tuning.js";
+import { applyAtrophy, applyInteraction, createRelationshipStore } from "./relationships.js";
 import {
   considerConditionFormation,
   considerDeprivationFormation,
+  considerRelationalFormation,
   createMemoryPool,
   influence,
   influenceBreakdown,
@@ -54,6 +59,114 @@ describe("memory formation — involuntary, significance-gated", () => {
     // input is required or possible.
     const pool = considerDeprivationFormation(createMemoryPool(), 0, "rest", 1, 0);
     expect(pool).toHaveLength(1);
+  });
+});
+
+describe("Relational memory formation (Stage 2 build step 7, ADR-20 D7) — consequence-driven, involuntary", () => {
+  it("forms a Relational memory from a significant relationship consequence's affinity delta", () => {
+    const { consequences } = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 30,
+      bTowardADelta: 5,
+    });
+    const consequence = consequences[0]!;
+    expect(consequence.kind).toBe("interaction");
+    const delta = consequence.kind === "interaction" ? consequence.minTowardMaxDelta : 0;
+
+    const pool = considerRelationalFormation(createMemoryPool(), 0, "zeke", delta);
+    expect(pool).toHaveLength(1);
+    expect(pool[0]!.type).toBe("relational");
+    expect(pool[0]!.context).toEqual({ otherId: "zeke", direction: "positive" });
+  });
+
+  it("does NOT form a memory from a non-significant consequence", () => {
+    const { consequences } = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 1,
+      bTowardADelta: 1,
+    });
+    const consequence = consequences[0]!;
+    const delta = consequence.kind === "interaction" ? consequence.minTowardMaxDelta : 0;
+    expect(Math.abs(delta)).toBeLessThan(MEMORY_TUNING.relationshipChangeSignificance);
+
+    const pool = considerRelationalFormation(createMemoryPool(), 0, "zeke", delta);
+    expect(pool).toEqual([]);
+  });
+
+  it("forms in either direction — negative affinity movement forms a memory too", () => {
+    const { store } = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 40,
+      bTowardADelta: 40,
+    });
+    const { consequences } = applyAtrophy(store, 10_000); // large elapsed duration to force a significant drop
+    expect(consequences).toHaveLength(1);
+    const consequence = consequences[0]!;
+    const delta = consequence.kind === "atrophy" ? consequence.minTowardMaxDelta : 0;
+    expect(delta).toBeLessThan(0);
+
+    const pool = considerRelationalFormation(createMemoryPool(), 10, "zeke", delta);
+    expect(pool).toHaveLength(1);
+    expect(pool[0]!.context).toEqual({ otherId: "zeke", direction: "negative" });
+  });
+
+  it("does NOT form a memory when the affinity delta is exactly at the boundary below significance", () => {
+    const pool = considerRelationalFormation(createMemoryPool(), 0, "zeke", MEMORY_TUNING.relationshipChangeSignificance / 2);
+    expect(pool).toEqual([]);
+  });
+
+  it("impact is normalized from the affinity delta (ADR-12's -100..100 scale) to memory's [0, 1] scale, clamped", () => {
+    const pool = considerRelationalFormation(createMemoryPool(), 0, "zeke", 40);
+    expect(pool[0]!.impact).toBeCloseTo(0.4, 10);
+
+    const extreme = considerRelationalFormation(createMemoryPool(), 0, "zeke", 500);
+    expect(extreme[0]!.impact).toBe(1);
+  });
+
+  it("formation is involuntary and trait-ungated: considerRelationalFormation accepts no trait parameter", () => {
+    const pool = considerRelationalFormation(createMemoryPool(), 0, "zeke", 50);
+    expect(pool).toHaveLength(1);
+  });
+
+  it("never reads the relationship store or its history — memory.ts imports no relationships module", () => {
+    const source = readFileSync(new URL("./memory.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/from ["']\.\/relationships\.js["']/);
+  });
+
+  it("relational entries share the one bounded memory pool alongside deprivation/condition — no separate storage", () => {
+    let pool: MemoryPool = createMemoryPool();
+    pool = considerDeprivationFormation(pool, 0, "hunger", 1, 0);
+    pool = considerConditionFormation(pool, 1, 0.1, 0.5);
+    pool = considerRelationalFormation(pool, 2, "zeke", 40);
+    expect(pool).toHaveLength(3);
+    expect(pool.map((e) => e.type).sort()).toEqual(["condition", "deprivation", "relational"]);
+    expect(pool.map((e) => e.id)).toEqual([0, 1, 2]); // one shared id sequence — one pool, one owner (M9)
+  });
+
+  it("does not mutate its inputs and is deterministic", () => {
+    const before = considerDeprivationFormation(createMemoryPool(), 0, "hunger", 1, 0);
+    const snapshot = JSON.parse(JSON.stringify(before));
+    considerRelationalFormation(before, 5, "zeke", 40);
+    expect(before).toEqual(snapshot);
+
+    const a = considerRelationalFormation(createMemoryPool(), 0, "zeke", 40);
+    const b = considerRelationalFormation(createMemoryPool(), 0, "zeke", 40);
+    expect(a).toEqual(b);
   });
 });
 

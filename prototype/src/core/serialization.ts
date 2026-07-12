@@ -24,16 +24,23 @@ import type { MemoryEntry, MemoryPool } from "../colonist/memory.js";
 import type { StressChannelId, StressContribution, StressState } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { WeightTiltContribution } from "../colonist/traits.js";
+import { deserializeRelationshipStore, serializeRelationshipStore } from "../colonist/relationships.js";
 import type { Goal, GoalStatus } from "../decision/goals.js";
 import { type AttributedDraw, type BlockedCandidateRecord, type DecisionOutcome } from "../decision/decide.js";
-import type { ComposedWeight, MemoryContribution, StressChannel, StressWeightContribution } from "../decision/weights.js";
+import type {
+  ComposedWeight,
+  MemoryContribution,
+  RelationshipContribution,
+  StressChannel,
+  StressWeightContribution,
+} from "../decision/weights.js";
 import type { Execution, ExecutionStatus } from "../task/execution.js";
 import type { TaskDefinition, TaskId, TaskResolution } from "../task/tasks.js";
 import type { DecisionLog, DecisionRecord, EventLog, EventRecord } from "../records/logs.js";
 import { validateSimulationState, type SimulationState, type TickEvent } from "../simulation/tick.js";
 
 /** The current save format version — bump on any incompatible SimulationState shape change. */
-export const SAVE_FORMAT_VERSION = 1;
+export const SAVE_FORMAT_VERSION = 2; // v2: adds the M10 relationship-store slice + relationshipAffinityBaselines (Stage 2).
 
 const GOAL_STATUSES: readonly GoalStatus[] = ["active", "suspended", "blocked", "completed", "abandoned"];
 const EXECUTION_STATUSES: readonly ExecutionStatus[] = ["inProgress", "interrupted", "completed", "aborted"];
@@ -51,7 +58,7 @@ const STRESS_CHANNEL_IDS: readonly StressChannelId[] = [
   "restAdequacy",
   "needsSatisfied",
 ];
-const MEMORY_FORMED_TYPES = ["deprivation", "condition"] as const;
+const MEMORY_FORMED_TYPES = ["deprivation", "condition", "relational"] as const;
 
 function fail(reason: string): never {
   throw new Error(`Invalid save data: ${reason}`);
@@ -178,7 +185,7 @@ function readMemory(raw: unknown, clockTick: number): MemoryPool {
   const seenIds = new Set<number>();
   return entries.map((entryRaw, i): MemoryEntry => {
     const o = expectObject(entryRaw, `colonist.memory[${i}]`);
-    const type = expectOneOf(o.type, ["deprivation", "condition"] as const, `colonist.memory[${i}].type`);
+    const type = expectOneOf(o.type, ["deprivation", "condition", "relational"] as const, `colonist.memory[${i}].type`);
     const context = expectObject(o.context, `colonist.memory[${i}].context`);
     const id = expectNonNegativeInteger(o.id, `colonist.memory[${i}].id`);
     if (seenIds.has(id)) fail(`"colonist.memory[${i}].id" duplicates id ${id} — memory ids are unique`);
@@ -195,7 +202,17 @@ function readMemory(raw: unknown, clockTick: number): MemoryPool {
     if (type === "deprivation") {
       return { ...base, type, context: { needId: expectOneOf(context.needId, NEEDS, `colonist.memory[${i}].context.needId`) } };
     }
-    return { ...base, type, context: { direction: expectOneOf(context.direction, ["rising", "falling"] as const, `colonist.memory[${i}].context.direction`) } };
+    if (type === "condition") {
+      return { ...base, type, context: { direction: expectOneOf(context.direction, ["rising", "falling"] as const, `colonist.memory[${i}].context.direction`) } };
+    }
+    return {
+      ...base,
+      type,
+      context: {
+        otherId: expectString(context.otherId, `colonist.memory[${i}].context.otherId`),
+        direction: expectOneOf(context.direction, ["positive", "negative"] as const, `colonist.memory[${i}].context.direction`),
+      },
+    };
   });
 }
 
@@ -280,6 +297,20 @@ function readDeprivationBaselines(raw: unknown): Readonly<Record<NeedId, number>
   return result;
 }
 
+/**
+ * Reads the relationship-affinity-baseline map (Stage 2 build step 8) — keyed by relationship
+ * partner id, an open set (unlike deprivationBaselines' fixed NEEDS keys), since a colonist may
+ * be party to any number of relationship pairs. Every own key must be a finite number.
+ */
+function readRelationshipAffinityBaselines(raw: unknown): Readonly<Record<string, number>> {
+  const o = expectObject(raw, "relationshipAffinityBaselines");
+  const result: Record<string, number> = {};
+  for (const key of Object.keys(o)) {
+    result[key] = expectNumber(o[key], `relationshipAffinityBaselines.${key}`);
+  }
+  return result;
+}
+
 // --- Task resolution (nested inside a "taskResolution" TickEvent) ---
 
 function readTaskDefinition(raw: unknown, field: string): TaskDefinition {
@@ -345,6 +376,16 @@ function readComposedWeight(raw: unknown, field: string): ComposedWeight {
       tilt: expectNumber(co.tilt, `${field}.stressContributions[${i}].tilt`),
     };
   });
+  const relationshipContributions: RelationshipContribution[] = expectArray(
+    o.relationshipContributions,
+    `${field}.relationshipContributions`,
+  ).map((c, i) => {
+    const co = expectObject(c, `${field}.relationshipContributions[${i}]`);
+    return {
+      otherId: expectString(co.otherId, `${field}.relationshipContributions[${i}].otherId`),
+      affinity: expectNumber(co.affinity, `${field}.relationshipContributions[${i}].affinity`),
+    };
+  });
   return {
     key: expectString(o.key, `${field}.key`),
     source: expectOneOf(o.source, GOAL_SOURCES, `${field}.source`),
@@ -358,6 +399,7 @@ function readComposedWeight(raw: unknown, field: string): ComposedWeight {
     traitContributions,
     memoryContributions,
     stressContributions,
+    relationshipContributions,
   };
 }
 
@@ -494,6 +536,7 @@ function readTickEvent(raw: unknown, field: string): TickEvent {
         kind: "memoryFormed",
         memoryType: expectOneOf(o.memoryType, MEMORY_FORMED_TYPES, `${field}.memoryType`),
         needId: o.needId === undefined ? undefined : expectOneOf(o.needId, NEEDS, `${field}.needId`),
+        otherId: o.otherId === undefined ? undefined : expectString(o.otherId, `${field}.otherId`),
       };
     case "stressEvaluated":
       return {
@@ -567,9 +610,11 @@ export function serialize(state: SimulationState): string {
     prng: state.prng,
     deprivationBaselines: state.deprivationBaselines,
     stressBaseline: state.stressBaseline,
+    relationshipAffinityBaselines: state.relationshipAffinityBaselines,
     hasBootstrapped: state.hasBootstrapped,
     eventLog: state.eventLog,
     decisionLog: state.decisionLog,
+    relationships: serializeRelationshipStore(state.relationships),
   });
 }
 
@@ -594,21 +639,29 @@ export function deserialize(json: string): SimulationState {
   }
 
   const clock = deserializeClock(JSON.stringify(o.clock));
+  const colonist = readColonist(o.colonist, clock.tick);
+  // Stage 2 build step 3: SimulationState still tracks one colonist (roster wiring is a later,
+  // separately-approved slice), so the only known id a relationship pair can reference is this
+  // one — every relationship therefore rejects as "unknown colonist id" until that slice lands.
+  const knownColonistIds = new Set([colonist.identity.id]);
+
   const state: SimulationState = {
     clock,
     world: readWorld(o.world),
     policy: readPolicy(o.policy),
     // The clock's tick is threaded in so memory formation ticks can be cross-checked against
     // the save's own present (a memory formed in the future is malformed, not repairable).
-    colonist: readColonist(o.colonist, clock.tick),
+    colonist,
     execution: readNullableExecution(o.execution, "execution"),
     suspendedExecution: readNullableExecution(o.suspendedExecution, "suspendedExecution"),
     prng: deserializePrng(JSON.stringify(o.prng)),
     deprivationBaselines: readDeprivationBaselines(o.deprivationBaselines),
     stressBaseline: expectNumber(o.stressBaseline, "stressBaseline"),
+    relationshipAffinityBaselines: readRelationshipAffinityBaselines(o.relationshipAffinityBaselines),
     hasBootstrapped: expectBoolean(o.hasBootstrapped, "hasBootstrapped"),
     eventLog: readEventLog(o.eventLog),
     decisionLog: readDecisionLog(o.decisionLog),
+    relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick),
   };
 
   validateSimulationState(state);

@@ -2,6 +2,9 @@
 // preserved progress, completion, re-decision triggers, fixed-step enforcement, stable
 // replay logs, purity.
 
+// @ts-expect-error — no @types/node in this zero-runtime-dependency prototype (Stage 1 plan);
+// Node/Vitest resolve this builtin at runtime regardless of the missing type declarations.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { advance, createClock } from "../core/clock.js";
 import { createPrng } from "../core/prng.js";
@@ -15,6 +18,7 @@ import { commitGoal, suspendGoal } from "../decision/goals.js";
 import { beginExecution, interruptExecution } from "../task/execution.js";
 import { taskDefinition } from "../task/tasks.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
+import { applyInteraction, createRelationshipStore } from "../colonist/relationships.js";
 
 const policy = createDefaultPolicy();
 
@@ -36,6 +40,7 @@ function stateAtTickOfDay(
     hasBootstrapped: false, // a freshly-built colonist with no goal/execution — genuinely never decided
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
+    relationships: createRelationshipStore(),
   };
 }
 
@@ -212,6 +217,7 @@ describe("goal interruption and resume — preserved execution progress (review 
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
+      relationships: createRelationshipStore(),
     };
 
     const result = tick(state, 1);
@@ -275,6 +281,7 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
+      relationships: createRelationshipStore(),
     };
 
     const result = tick(state, 1);
@@ -726,9 +733,111 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
+      relationships: createRelationshipStore(),
     };
     validateSimulationState(overflowState); // the hand-built precondition is itself valid
     const overflowResult = tick(overflowState, 1);
     validateSimulationState(overflowResult.state); // and so is the state after overflow resolves
+  });
+});
+
+describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-20 D7)", () => {
+  // atrophyPerTick is 0.02/tick (relationships.ts); relationshipChangeSignificance is 15
+  // (config/tuning.ts) — cumulative drift needs ~750 ticks past the first-sighting tick to
+  // cross it. Starting affinity of 50 stays well clear of clamping the whole way.
+  const SIGNIFICANT_TICKS = 800;
+  const NON_SIGNIFICANT_TICKS = 100; // 100 * 0.02 = 2, well below the 15 threshold
+
+  function seededState(): SimulationState {
+    const colonist = withNeeds(createColonist("c1", "Maya"), createNeeds());
+    const relationships = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 50,
+      bTowardADelta: 50,
+    }).store;
+    return {
+      clock: createClock(),
+      world: createWorld(),
+      policy,
+      colonist,
+      execution: null,
+      suspendedExecution: null,
+      prng: createPrng(1),
+      ...createFreshMemoryBaselines(),
+      hasBootstrapped: false,
+      eventLog: createEventLog(),
+      decisionLog: createDecisionLog(),
+      relationships,
+    };
+  }
+
+  it("a real run path forms a Relational memory once cumulative atrophy drift becomes significant", () => {
+    const result = run(seededState(), SIGNIFICANT_TICKS);
+    const relational = result.finalState.colonist.memory.filter((e) => e.type === "relational");
+    expect(relational.length).toBeGreaterThan(0);
+    expect(relational[0]!.context).toEqual({ otherId: "zeke", direction: "negative" });
+  });
+
+  it("emits a memoryFormed event with memoryType relational and the correct otherId", () => {
+    const result = run(seededState(), SIGNIFICANT_TICKS);
+    const formed = result.events.filter((e) => e.kind === "memoryFormed" && e.memoryType === "relational");
+    expect(formed.length).toBeGreaterThan(0);
+    expect(formed[0]).toMatchObject({ kind: "memoryFormed", memoryType: "relational", otherId: "zeke" });
+  });
+
+  it("does NOT form a Relational memory while cumulative drift stays below significance", () => {
+    const result = run(seededState(), NON_SIGNIFICANT_TICKS);
+    const relational = result.finalState.colonist.memory.filter((e) => e.type === "relational");
+    expect(relational).toEqual([]);
+    expect(result.events.some((e) => e.kind === "memoryFormed" && e.memoryType === "relational")).toBe(false);
+  });
+
+  it("a real single-colonist run with no materialized pairs never forms a Relational memory (unchanged Stage 1 behavior)", () => {
+    const colonist = withNeeds(createColonist("c1", "Maya"), createNeeds());
+    const bare: SimulationState = {
+      clock: createClock(),
+      world: createWorld(),
+      policy,
+      colonist,
+      execution: null,
+      suspendedExecution: null,
+      prng: createPrng(1),
+      ...createFreshMemoryBaselines(),
+      hasBootstrapped: false,
+      eventLog: createEventLog(),
+      decisionLog: createDecisionLog(),
+      relationships: createRelationshipStore(),
+    };
+    const result = run(bare, SIGNIFICANT_TICKS);
+    expect(result.finalState.colonist.memory.filter((e) => e.type === "relational")).toEqual([]);
+  });
+
+  it("existing Deprivation/Condition memory formation is unaffected by relationship wiring", () => {
+    const base = seededState();
+    const withHunger: SimulationState = {
+      ...base,
+      colonist: withNeeds(base.colonist, { ...createNeeds(), hunger: { level: 0.9, ticksBelowLow: 0 } }),
+    };
+    const result = run(withHunger, SIGNIFICANT_TICKS);
+    const deprivation = result.finalState.colonist.memory.filter((e) => e.type === "deprivation");
+    expect(deprivation.length).toBeGreaterThan(0); // hunger decay over 800 ticks still forms Deprivation memories as before
+  });
+
+  it("never reads RelationshipStore.pairs or PairRecord.history directly — tick.ts only threads applyAtrophy's own consequence fields", () => {
+    const source = readFileSync(new URL("./tick.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/relationships\.pairs/);
+    expect(source).not.toMatch(/\.history\b/);
+  });
+
+  it("purity: run() does not mutate the seeded initial state", () => {
+    const state = seededState();
+    const snapshot = JSON.parse(JSON.stringify(state));
+    run(state, SIGNIFICANT_TICKS);
+    expect(state).toEqual(snapshot);
   });
 });

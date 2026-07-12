@@ -3,10 +3,16 @@
 // influence. NOT the event log: bounded and formed only on significant outcomes, never every
 // event (memory-system B1). Pure throughout.
 //
-// Stage 1 realizes two of the four closed memory types — Deprivation (need-state significance)
-// and Condition (stress significance). Relational (needs M10, blocked on AQ-2) and Crisis
-// (needs a crisis system) remain structurally represented in MemoryType (config/constants.ts)
-// but this module never produces them — there is no local trigger to form them from yet.
+// Stage 1 realized two of the four closed memory types — Deprivation (need-state significance)
+// and Condition (stress significance). Stage 2 build step 7 adds the third — Relational,
+// triggered by M10's fact-only relationship consequences (ADR-20 D7: applyInteraction/
+// applyAtrophy emit consequences; receivers, including this module, apply their own
+// significance rules). This module never reads the relationship store or its history directly
+// — considerRelationalFormation takes only the already-computed affinity delta and the other
+// colonist's id, exactly as considerConditionFormation takes only a before/after stress delta
+// rather than reading StressState's internals. Crisis (needs a crisis system) remains
+// structurally represented in MemoryType (config/constants.ts) but this module still never
+// produces it — there is no local trigger to form it from yet.
 //
 // Formation is involuntary and trait-ungated (ADR-16; locked #19): note that neither
 // formation function below accepts a TraitId parameter — that omission is the enforcement.
@@ -24,9 +30,16 @@ export interface ConditionContext {
   readonly direction: "rising" | "falling";
 }
 
+/** A Relational memory's context: who it's about, and which direction the affinity moved. */
+export interface RelationalContext {
+  readonly otherId: string;
+  readonly direction: "positive" | "negative";
+}
+
 type MemoryRecord =
   | { readonly type: Extract<MemoryType, "deprivation">; readonly context: DeprivationContext }
-  | { readonly type: Extract<MemoryType, "condition">; readonly context: ConditionContext };
+  | { readonly type: Extract<MemoryType, "condition">; readonly context: ConditionContext }
+  | { readonly type: Extract<MemoryType, "relational">; readonly context: RelationalContext };
 
 /** One memory entry. `impact` is fixed at formation and never changes afterward (ADR-16). */
 export type MemoryEntry = MemoryRecord & {
@@ -150,6 +163,31 @@ export function considerConditionFormation(
     context: { direction: delta > 0 ? "rising" : "falling" },
     formedAtTick: currentTick,
     impact: clamp01(Math.abs(delta)),
+  };
+  return evictToCapacity([...pool, entry], currentTick);
+}
+
+/**
+ * Considers forming a Relational memory from a relationship consequence's affinity delta
+ * (ADR-20 D7: this module is a receiver of M10's fact-only write-path output, never a reader of
+ * the relationship store or its history — `affinityDelta` and `otherId` are the only inputs,
+ * exactly as `considerConditionFormation` takes only a stress delta). Involuntary: forms only
+ * when the absolute affinity movement meets the significance threshold, in either direction.
+ * `affinityDelta` is on ADR-12's -100..100 scale; impact is normalized to memory's [0, 1] scale.
+ */
+export function considerRelationalFormation(
+  pool: MemoryPool,
+  currentTick: number,
+  otherId: string,
+  affinityDelta: number,
+): MemoryPool {
+  if (Math.abs(affinityDelta) < MEMORY_TUNING.relationshipChangeSignificance) return pool;
+  const entry: MemoryEntry = {
+    id: nextId(pool),
+    type: "relational",
+    context: { otherId, direction: affinityDelta > 0 ? "positive" : "negative" },
+    formedAtTick: currentTick,
+    impact: clamp01(Math.abs(affinityDelta) / 100),
   };
   return evictToCapacity([...pool, entry], currentTick);
 }
