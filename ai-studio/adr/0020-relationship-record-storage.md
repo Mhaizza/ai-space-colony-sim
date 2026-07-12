@@ -65,11 +65,11 @@ pairView(store, colonistAId, colonistBId) -> PairView
 
 ### D3 - Candidate generation starts from the snapshot, never the sparse relationship store
 
-Social candidate generation enumerates `nearbyColonists` from the deciding colonist's fixed WorldSnapshot. For each observable candidate, M11 asks M10 for `perspective(ownerId, otherId)`.
+Social candidate generation enumerates `nearbyColonists` from the deciding colonist's fixed WorldSnapshot. For each observable candidate, M11 asks M10 for `perspective(store, ownerId, otherId)` — the same pure read defined in D2, always taking the store as its input.
 
 The relationship store is not the source of possible partners. Therefore, a colonist who has never interacted with the owner remains visible and can become a valid social candidate.
 
-No `perspectivesOf(owner)` enumeration is required for Stage 2. Inspector lists likewise enumerate the known colony roster and call `perspective` so absent sparse records are represented correctly.
+No `perspectivesOf(owner)` enumeration is required for Stage 2. Inspector lists likewise enumerate the known colony roster and call `perspective(store, ownerId, otherId)` so absent sparse records are represented correctly.
 
 ### D4 - Absent pairs have a deterministic default and remain unmaterialized
 
@@ -104,12 +104,12 @@ Serialized pair records are arrays ordered lexicographically by the first tuple 
 
 ### D6 - Pair facts are stored once; directional effects are stored explicitly
 
-A minimal pair record contains:
+A minimal pair record contains (naming bound to D5's canonical tuple: "min" is the lower colonist id under the documented ordinal comparison, "max" the higher — never insertion or interaction order):
 
 ```text
-pair: [firstColonistId, secondColonistId]
-firstTowardSecondAffinity: number
-secondTowardFirstAffinity: number
+pair: [minColonistId, maxColonistId]   // exactly D5's canonical tuple
+minTowardMaxAffinity: number           // min-id colonist's regard for the max-id colonist
+maxTowardMinAffinity: number           // max-id colonist's regard for the min-id colonist
 history: bounded significant interaction entries
 lastInteractionTick: tick | null
 ```
