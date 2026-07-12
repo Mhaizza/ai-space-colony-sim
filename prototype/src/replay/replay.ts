@@ -144,6 +144,7 @@ const STATE_FIELDS = [
   "stressBaseline",
   "relationships", // Stage 2 build step 5: M10's pair store — a plain nested object, diffed generically like every other field.
   "relationshipAffinityBaselines", // Stage 2 build step 8: cumulative per-partner drift tracking.
+  "roster", // Stage 2 Slice 2: identity-only multi-colonist roster — a plain array, diffed generically.
 ] as const;
 
 function firstStateDivergence(expected: SimulationState, actual: SimulationState): ReplayDivergence | null {

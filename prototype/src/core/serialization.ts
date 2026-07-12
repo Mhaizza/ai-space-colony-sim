@@ -40,7 +40,7 @@ import type { DecisionLog, DecisionRecord, EventLog, EventRecord } from "../reco
 import { validateSimulationState, type SimulationState, type TickEvent } from "../simulation/tick.js";
 
 /** The current save format version — bump on any incompatible SimulationState shape change. */
-export const SAVE_FORMAT_VERSION = 2; // v2: adds the M10 relationship-store slice + relationshipAffinityBaselines (Stage 2).
+export const SAVE_FORMAT_VERSION = 3; // v3: adds the Stage 2 Slice 2 multi-colonist roster.
 
 const GOAL_STATUSES: readonly GoalStatus[] = ["active", "suspended", "blocked", "completed", "abandoned"];
 const EXECUTION_STATUSES: readonly ExecutionStatus[] = ["inProgress", "interrupted", "completed", "aborted"];
@@ -240,22 +240,34 @@ function readNullableGoal(raw: unknown, field: string): Goal | null {
   return raw === null ? null : readGoal(raw, field);
 }
 
-function readIdentity(raw: unknown): ColonistIdentity {
-  const o = expectObject(raw, "colonist.identity");
-  const skills = expectArray(o.skills, "colonist.identity.skills").map((s, i) => expectString(s, `colonist.identity.skills[${i}]`));
+function readIdentity(raw: unknown, field = "colonist.identity"): ColonistIdentity {
+  const o = expectObject(raw, field);
+  const skills = expectArray(o.skills, `${field}.skills`).map((s, i) => expectString(s, `${field}.skills[${i}]`));
   // Copilot-confirmed defect: this previously cast every saved string to TraitId without
   // checking membership. A save containing baseTraits: ["unknown"] passed deserialization and
   // then crashed on the next tick, when TRAITS[traitId] dereferenced an id that was never a
   // real trait. Validated against TRAIT_IDS like every other closed-set field in this file.
-  const baseTraits = expectArray(o.baseTraits, "colonist.identity.baseTraits").map(
-    (t, i) => expectOneOf(t, TRAIT_IDS, `colonist.identity.baseTraits[${i}]`),
+  const baseTraits = expectArray(o.baseTraits, `${field}.baseTraits`).map(
+    (t, i) => expectOneOf(t, TRAIT_IDS, `${field}.baseTraits[${i}]`),
   );
   return {
-    id: expectString(o.id, "colonist.identity.id"),
-    name: expectString(o.name, "colonist.identity.name"),
+    id: expectString(o.id, `${field}.id`),
+    name: expectString(o.name, `${field}.name`),
     skills,
     baseTraits,
   };
+}
+
+/**
+ * Reads the Stage 2 Slice 2 roster: an array of identity-only records for colonists other than
+ * the simulated `colonist`, each validated exactly like `colonist.identity` (same closed
+ * trait-id set, same structural checks) — reject-don't-repair, same as everywhere else in this
+ * module. Duplicate ids (against each other or against the primary colonist) are NOT rejected
+ * here — that cross-field invariant belongs to `validateSimulationState` (tick.ts), the one
+ * place cross-field SimulationState invariants are defined, so it isn't re-derived here.
+ */
+function readRoster(raw: unknown): readonly ColonistIdentity[] {
+  return expectArray(raw, "roster").map((entryRaw, i) => readIdentity(entryRaw, `roster[${i}]`));
 }
 
 function readColonist(raw: unknown, clockTick: number): ColonistState {
@@ -616,6 +628,7 @@ export function serialize(state: SimulationState): string {
     eventLog: state.eventLog,
     decisionLog: state.decisionLog,
     relationships: serializeRelationshipStore(state.relationships),
+    roster: state.roster,
   });
 }
 
@@ -641,10 +654,11 @@ export function deserialize(json: string): SimulationState {
 
   const clock = deserializeClock(JSON.stringify(o.clock));
   const colonist = readColonist(o.colonist, clock.tick);
-  // Stage 2 build step 3: SimulationState still tracks one colonist (roster wiring is a later,
-  // separately-approved slice), so the only known id a relationship pair can reference is this
-  // one — every relationship therefore rejects as "unknown colonist id" until that slice lands.
-  const knownColonistIds = new Set([colonist.identity.id]);
+  const roster = readRoster(o.roster);
+  // Stage 2 Slice 2: the roster's identity-only records are now known colonist ids too, so a
+  // materialized two-party relationship pair can reference a real roster member instead of
+  // always rejecting as "unknown colonist id" (build step 3's original single-colonist limit).
+  const knownColonistIds = new Set([colonist.identity.id, ...roster.map((r) => r.id)]);
 
   const state: SimulationState = {
     clock,
@@ -663,6 +677,7 @@ export function deserialize(json: string): SimulationState {
     eventLog: readEventLog(o.eventLog),
     decisionLog: readDecisionLog(o.decisionLog),
     relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick),
+    roster,
   };
 
   validateSimulationState(state);

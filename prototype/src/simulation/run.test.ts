@@ -26,6 +26,17 @@ describe("createInitialState", () => {
     const b = createInitialState(2, "c1", "Maya");
     expect(a.prng).not.toEqual(b.prng);
   });
+
+  it("defaults to an empty roster (Stage 2 Slice 2) — unchanged Stage 1 behavior", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    expect(state.roster).toEqual([]);
+  });
+
+  it("accepts an optional roster of other colonists", () => {
+    const roster = [{ id: "zeke", name: "Zeke", skills: [], baseTraits: [] as const }];
+    const state = createInitialState(1, "c1", "Maya", [], [], roster);
+    expect(state.roster).toEqual(roster);
+  });
 });
 
 describe("run — advances by calling tick() once per BASE_TICKS_PER_STEP (review fix 2)", () => {

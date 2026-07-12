@@ -14,6 +14,8 @@ import { setModuleFunctional } from "../world/world.js";
 import { suspendGoal, type Goal } from "../decision/goals.js";
 import type { Execution } from "../task/execution.js";
 import { MEMORY_TUNING } from "../config/tuning.js";
+import { applyInteraction, createRelationshipStore } from "../colonist/relationships.js";
+import type { ColonistIdentity } from "../colonist/colonist.js";
 import { deserialize, SAVE_FORMAT_VERSION, serialize } from "./serialization.js";
 
 // reason: these fixtures are deliberately mutated into shapes deserialize() must REJECT (a
@@ -66,6 +68,58 @@ describe("complete state round-trip", () => {
     const reloaded = deserialize(serialize(withSocialGoal));
     expect(reloaded.colonist.currentGoal).toEqual(socialGoal);
     expect(reloaded.colonist.currentGoal?.relatedColonistId).toBe("npc-42");
+  });
+});
+
+describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)", () => {
+  const zeke: ColonistIdentity = { id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: ["driven"] };
+  const yara: ColonistIdentity = { id: "yara", name: "Yara", skills: [], baseTraits: ["gregarious"] };
+
+  it("round-trips a roster of 2 colonists alongside the primary colonist", () => {
+    const state = createInitialState(1, "c1", "Maya", [], [], [zeke, yara]);
+    const reloaded = deserialize(serialize(state));
+    expect(reloaded.roster).toEqual([zeke, yara]);
+    expect(reloaded).toEqual(state);
+  });
+
+  it("round-trips a materialized two-party relationship pair against a real roster member (the original single-colonist limitation is lifted)", () => {
+    const base = createInitialState(1, "c1", "Maya", [], [], [zeke]);
+    const relationships = applyInteraction(base.relationships, {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 20,
+      bTowardADelta: 15,
+    }).store;
+    const state: SimulationState = { ...base, relationships };
+    const reloaded = deserialize(serialize(state));
+    expect(reloaded.relationships).toEqual(relationships);
+    expect(reloaded.relationships.pairs["c1"]!["zeke"]!.minTowardMaxAffinity).toBe(20);
+  });
+
+  it("still rejects a relationship pair naming a colonist id that is neither the primary colonist nor in the roster", () => {
+    const base = createInitialState(1, "c1", "Maya", [], [], [zeke]); // roster has zeke, not yara
+    const relationships = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "yara",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "yara",
+      aTowardBDelta: 10,
+      bTowardADelta: 10,
+    }).store;
+    const state: SimulationState = { ...base, relationships };
+    expect(() => deserialize(serialize(state))).toThrow(/unknown colonist id/);
+  });
+
+  it("a real run with a 3-colonist roster (primary + 2) still round-trips exactly after ticks advance", () => {
+    const state = run(createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]), 200).finalState;
+    expect(state.roster).toEqual([zeke, yara]); // sanity: no tick phase ever touches the roster
+    expect(deserialize(serialize(state))).toEqual(state);
   });
 });
 
@@ -240,6 +294,37 @@ describe("malformed-state rejection", () => {
     const notInProgress: RawSave = JSON.parse(serialize(midpoint));
     notInProgress.execution.status = "completed"; // the active slot never retains a finished execution
     expect(() => deserialize(JSON.stringify(notInProgress))).toThrow(/inProgress/);
+  });
+
+  it("rejects a roster entry with an unrecognized trait id (Stage 2 Slice 2)", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
+    saved.roster = [{ id: "npc-1", name: "Zeke", skills: [], baseTraits: ["unknown"] }];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/unrecognized value/);
+  });
+
+  it("rejects a roster entry missing a required identity field", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
+    saved.roster = [{ id: "npc-1", skills: [], baseTraits: [] }]; // no "name"
+    expect(() => deserialize(JSON.stringify(saved))).toThrow();
+  });
+
+  it("rejects a roster whose id duplicates the primary colonist's own id (cross-field invariant)", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
+    saved.roster = [{ id: "c1", name: "Impostor", skills: [], baseTraits: [] }];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/roster/);
+  });
+
+  it("rejects a roster with two entries sharing the same id", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
+    saved.roster = [
+      { id: "npc-1", name: "Zeke", skills: [], baseTraits: [] },
+      { id: "npc-1", name: "Yara", skills: [], baseTraits: [] },
+    ];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/duplicate/);
   });
 });
 

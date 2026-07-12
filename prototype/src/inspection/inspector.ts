@@ -61,6 +61,12 @@ export interface InspectionSummary {
    * until a later, separately-approved slice wires candidate/decision consumption.
    */
   readonly relationships: readonly PairView[];
+  /**
+   * Stage 2 Slice 2 — the identity-only multi-colonist roster (other colonists a relationship
+   * pair may reference), detached exactly like `colonist`. Read-only: this module never
+   * simulates a roster member and never derives anything from it beyond exposing it as-is.
+   */
+  readonly roster: readonly ColonistIdentity[];
 }
 
 function assertLimit(limit: number): void {
@@ -146,6 +152,7 @@ export function inspect(state: SimulationState, recentLimit = 10): InspectionSum
     recentEvents: recentEvents(state, recentLimit),
     recentDecisions: recentDecisions(state, recentLimit),
     relationships: detach(allRelationshipPairViews(state.relationships)),
+    roster: detach(state.roster),
   };
 }
 

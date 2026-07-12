@@ -327,3 +327,28 @@ describe("relationship pair inspection (Stage 2 build step 5, ADR-20 D2)", () =>
     expect(Object.keys(state.relationships.pairs)).toEqual(["c1"]);
   });
 });
+
+describe("roster inspection (Stage 2 Slice 2)", () => {
+  const zeke = { id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: [] } as const;
+  const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
+
+  it("exposes the roster as-is, alongside the relationship pairs it may reference", () => {
+    const base = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]);
+    const state: SimulationState = { ...base, relationships: sampleRelationshipStore() };
+    const summary = inspect(state);
+    expect(summary.roster).toEqual([zeke, yara]);
+    expect(summary.relationships.length).toBeGreaterThan(0);
+  });
+
+  it("a real run with no roster reports it empty (unchanged Stage 1 behavior)", () => {
+    const state = run(createInitialState(1, "c1", "Maya", ["engineering"]), 100).finalState;
+    expect(inspect(state).roster).toEqual([]);
+  });
+
+  it("detached: mutating the returned roster never aliases back into the state", () => {
+    const base = createInitialState(1, "c1", "Maya", [], [], [zeke]);
+    const summary = inspect(base);
+    (summary.roster as unknown as { name: string }[])[0]!.name = "Tampered";
+    expect(base.roster[0]!.name).toBe("Zeke");
+  });
+});

@@ -10,7 +10,7 @@
 import { createClock } from "../core/clock.js";
 import { createPrng } from "../core/prng.js";
 import { BASE_TICKS_PER_STEP } from "../config/constants.js";
-import { createColonist } from "../colonist/colonist.js";
+import { createColonist, type ColonistIdentity } from "../colonist/colonist.js";
 import type { TraitId } from "../colonist/traits.js";
 import { createRelationshipStore } from "../colonist/relationships.js";
 import { createDefaultPolicy } from "../world/policy.js";
@@ -18,13 +18,19 @@ import { createWorld } from "../world/world.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
 import { createFreshMemoryBaselines, tick, type SimulationState, type TickEvent } from "./tick.js";
 
-/** Creates a fresh Stage 1 simulation: default station, default policy, one colonist, seeded PRNG. */
+/**
+ * Creates a fresh Stage 1 simulation: default station, default policy, one simulated colonist,
+ * seeded PRNG, plus an optional identity-only roster (Stage 2 Slice 2) of other colonists a
+ * relationship pair may reference. Roster entries are never simulated (no needs/stress/memory/
+ * decision loop) — the empty default preserves every pre-Slice-2 run's exact behavior.
+ */
 export function createInitialState(
   seed: number,
   colonistId: string,
   colonistName: string,
   skills: readonly string[] = [],
   baseTraits: readonly TraitId[] = [],
+  roster: readonly ColonistIdentity[] = [],
 ): SimulationState {
   return {
     clock: createClock(),
@@ -39,6 +45,7 @@ export function createInitialState(
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
+    roster,
   };
 }
 

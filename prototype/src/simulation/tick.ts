@@ -26,7 +26,7 @@ import { BASE_TICKS_PER_STEP, NEEDS, type NeedId, type PriorityTier } from "../c
 import type { ClockState } from "../core/clock.js";
 import { advance, tickOfDay } from "../core/clock.js";
 import type { PrngState } from "../core/prng.js";
-import type { ColonistState } from "../colonist/colonist.js";
+import type { ColonistIdentity, ColonistState } from "../colonist/colonist.js";
 import { withCurrentGoal, withMemory, withNeeds, withStress, withSuspendedGoal } from "../colonist/colonist.js";
 import { decayNeeds, isCritical, isLow, isSatisfied } from "../colonist/needs.js";
 import { considerConditionFormation, considerDeprivationFormation, considerRelationalFormation } from "../colonist/memory.js";
@@ -123,6 +123,18 @@ export interface SimulationState {
    * consequences through — M10 remains the sole owner of the store's shape and rules.
    */
   readonly relationships: RelationshipStore;
+  /**
+   * Stage 2 Slice 2 — a minimal multi-colonist roster: identity-only records for colonists
+   * other than the simulated `colonist`, fixed at creation and never touched by any tick()
+   * phase. This is deliberately NOT a second `ColonistState` per entry: no needs/stress/memory/
+   * decision simulation exists for roster members yet (that is Stage 3-scale work, out of
+   * scope here). Its entire purpose is letting a relationship pair's second party be a *known*
+   * colonist id, so the relationship store can materialize, serialize, and replay a real
+   * two-party pair instead of only ever rejecting one as "unknown colonist id" (build step 3's
+   * documented limitation). tick.ts threads this through unchanged — it is not a decision input
+   * (nearbyColonists/candidate generation remain their own, separately-approved concern).
+   */
+  readonly roster: readonly ColonistIdentity[];
 }
 
 /** One tick's trace — the "stable replay log": what was detected, decided, resolved, executed. */
@@ -224,6 +236,24 @@ export function validateSimulationState(state: SimulationState): void {
           `"${suspendedExecution.status}".`,
       );
     }
+  }
+
+  // Roster invariant (Stage 2 Slice 2): every roster entry's id must be distinct from the
+  // primary colonist's and from every other roster entry's — a duplicate id would make a
+  // relationship pair's "known colonist" ambiguous between the simulated colonist and a
+  // roster placeholder (or between two roster placeholders).
+  const rosterIds = state.roster.map((r) => r.id);
+  if (rosterIds.includes(state.colonist.identity.id)) {
+    throw new Error(
+      `Invalid SimulationState: roster contains "${state.colonist.identity.id}", which duplicates the primary colonist's own id.`,
+    );
+  }
+  const seenRosterIds = new Set<string>();
+  for (const id of rosterIds) {
+    if (seenRosterIds.has(id)) {
+      throw new Error(`Invalid SimulationState: roster contains duplicate id "${id}".`);
+    }
+    seenRosterIds.add(id);
   }
 }
 
@@ -591,7 +621,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships,
+        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster,
       },
       events,
     );
@@ -612,7 +642,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships,
+        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster,
       },
       events,
     );
@@ -658,7 +688,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   return finish(
     {
       clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-      deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships,
+      deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster,
     },
     events,
   );
