@@ -83,6 +83,6 @@ export function buildSnapshot(
     effectivePolicy: { ...policy },
     modules,
     foodStock: world.foodStock,
-    nearbyColonists,
+    nearbyColonists: [...nearbyColonists],
   };
 }
