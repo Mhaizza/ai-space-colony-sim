@@ -32,6 +32,12 @@ export function createInitialState(
   baseTraits: readonly TraitId[] = [],
   roster: readonly ColonistIdentity[] = [],
 ): SimulationState {
+  const clonedRoster = roster.map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+    skills: [...entry.skills],
+    baseTraits: [...entry.baseTraits],
+  }));
   const state: SimulationState = {
     clock: createClock(),
     world: createWorld(),
@@ -45,7 +51,7 @@ export function createInitialState(
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
-    roster,
+    roster: clonedRoster,
   };
   validateSimulationState(state);
   return state;
