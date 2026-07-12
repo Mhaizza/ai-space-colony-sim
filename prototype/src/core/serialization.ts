@@ -229,6 +229,7 @@ function readGoal(raw: unknown, field: string): Goal {
     tier: expectPriorityTier(o.tier, `${field}.tier`),
     key: expectString(o.key, `${field}.key`),
     relatedNeed: o.relatedNeed === undefined ? undefined : expectOneOf(o.relatedNeed, NEEDS, `${field}.relatedNeed`),
+    relatedColonistId: o.relatedColonistId === undefined ? undefined : expectString(o.relatedColonistId, `${field}.relatedColonistId`),
     status: expectOneOf(o.status, GOAL_STATUSES, `${field}.status`),
     motivation: expectString(o.motivation, `${field}.motivation`),
     adoptedAtTick: expectNonNegativeInteger(o.adoptedAtTick, `${field}.adoptedAtTick`),
