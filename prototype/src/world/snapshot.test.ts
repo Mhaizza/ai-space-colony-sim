@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { advance, createClock } from "../core/clock.js";
 import { createDefaultPolicy } from "./policy.js";
 import { consumeFood, createWorld, setModuleFunctional } from "./world.js";
-import { buildSnapshot } from "./snapshot.js";
+import { buildSnapshot, type ObservableColonist } from "./snapshot.js";
+import { createRelationshipStore, perspective } from "../colonist/relationships.js";
 
 describe("snapshot completeness", () => {
   it("includes time references, effective policy, module states, and resource conditions", () => {
@@ -90,5 +91,30 @@ describe("snapshot is the only world-to-decision read path (structural note)", (
   it("WorldSnapshot carries the effective policy directly — no cascade needed at Stage 1's single scope", () => {
     const snapshot = buildSnapshot(createClock(), createDefaultPolicy(), createWorld());
     expect(snapshot.effectivePolicy).toEqual(createDefaultPolicy());
+  });
+});
+
+describe("nearbyColonists population (Stage 2 build step 4, ADR-20 D3)", () => {
+  const nearby: readonly ObservableColonist[] = [
+    { id: "zeke", ambientState: "working" },
+    { id: "yara", ambientState: "resting" },
+  ];
+
+  it("populates nearbyColonists from a given list at 3-colonist scale", () => {
+    const snapshot = buildSnapshot(createClock(), createDefaultPolicy(), createWorld(), nearby);
+    expect(snapshot.nearbyColonists).toEqual(nearby);
+  });
+
+  it("a never-interacted colonist stays visible — perspective resolves to the D4 default", () => {
+    const snapshot = buildSnapshot(createClock(), createDefaultPolicy(), createWorld(), nearby);
+    const zeke = snapshot.nearbyColonists.find((c) => c.id === "zeke");
+    expect(zeke).toBeDefined();
+    expect(perspective(createRelationshipStore(), "c1", "zeke")).toEqual({ affinity: 0, state: "acquainted" });
+  });
+
+  it("building a snapshot with real nearby colonists never touches the relationship store", () => {
+    const store = createRelationshipStore();
+    buildSnapshot(createClock(), createDefaultPolicy(), createWorld(), nearby);
+    expect(Object.keys(store.pairs)).toEqual([]);
   });
 });

@@ -47,6 +47,26 @@ describe("complete state round-trip", () => {
     const state = createInitialState(7, "c1", "Maya");
     expect(deserialize(serialize(state))).toEqual(state);
   });
+
+  it("round-trips a goal with relatedColonistId (social voluntary goal survives save/load)", () => {
+    const base = createInitialState(7, "c1", "Maya");
+    const socialGoal: Goal = {
+      source: "voluntary",
+      tier: 5,
+      key: "voluntary:social:npc-42",
+      relatedColonistId: "npc-42",
+      status: "active",
+      motivation: "free-time social candidate",
+      adoptedAtTick: 0,
+    };
+    const withSocialGoal: SimulationState = {
+      ...base,
+      colonist: { ...base.colonist, currentGoal: socialGoal },
+    };
+    const reloaded = deserialize(serialize(withSocialGoal));
+    expect(reloaded.colonist.currentGoal).toEqual(socialGoal);
+    expect(reloaded.colonist.currentGoal?.relatedColonistId).toBe("npc-42");
+  });
 });
 
 describe("deterministic replay after save/load", () => {

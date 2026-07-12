@@ -142,6 +142,8 @@ const STATE_FIELDS = [
   "prng",
   "deprivationBaselines",
   "stressBaseline",
+  "relationships", // Stage 2 build step 5: M10's pair store — a plain nested object, diffed generically like every other field.
+  "relationshipAffinityBaselines", // Stage 2 build step 8: cumulative per-partner drift tracking.
 ] as const;
 
 function firstStateDivergence(expected: SimulationState, actual: SimulationState): ReplayDivergence | null {

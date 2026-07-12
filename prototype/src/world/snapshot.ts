@@ -12,8 +12,14 @@
 //     snapshot). Copying makes the invariant hold at runtime regardless of what any caller
 //     does (locked #4: "no mid-decision reads, no live cross-agent references").
 //   - Tier-1-only, spatially bounded: nearbyColonists carries only observable ambient state,
-//     never another colonist's internals (locked #21). At Stage 1 there is exactly one
-//     colonist, so the field is always empty — present, not populated, per the Stage 1 scope.
+//     never another colonist's internals (locked #21). Stage 2 build step 4 (ADR-20 D3):
+//     buildSnapshot accepts an already-computed Tier-1 view of other colonists and carries it
+//     through unchanged — the same assemble-don't-derive pattern as `modules`/`foodStock`. This
+//     module never reads M10 (the relationship store) to decide who is nearby: candidate
+//     enumeration is snapshot-driven, never relationship-store-driven, so a colonist the owner
+//     has never interacted with is exactly as visible here as one they have a long history
+//     with. Real single-colonist runs still pass nothing, so the field defaults to empty —
+//     present, not populated, until a caller actually has other colonists to report.
 //   - no crisis-stage labels: this module reads M2 conditions only; stage labels are S2's
 //     player-signaling output and are never colonist input (locked #22). S2 does not exist
 //     yet, so there is nothing to exclude in code — this is a standing constraint on future
@@ -49,11 +55,21 @@ export interface WorldSnapshot {
 }
 
 /**
- * Builds one fixed snapshot from the current world, policy, and clock state. Pure: the
- * result is a new plain object, and the policy/module slices are copied rather than aliased —
- * no later mutation reachable through the caller's references can change an existing snapshot.
+ * Builds one fixed snapshot from the current world, policy, and clock state, plus an
+ * already-computed Tier-1 view of nearby colonists (default empty — the real run has exactly
+ * one colonist so far; Stage 2 candidate/decision wiring that would supply a real list remains
+ * a later, separately-approved slice). Pure: the result is a new plain object, and the
+ * policy/module slices are copied rather than aliased — no later mutation reachable through the
+ * caller's references can change an existing snapshot. `nearbyColonists` is carried through
+ * exactly as given — this module computes no colonist's ambient state and consults no other
+ * module (in particular, never M10) to decide who is nearby.
  */
-export function buildSnapshot(clock: ClockState, policy: ShiftPolicy, world: WorldState): WorldSnapshot {
+export function buildSnapshot(
+  clock: ClockState,
+  policy: ShiftPolicy,
+  world: WorldState,
+  nearbyColonists: readonly ObservableColonist[] = [],
+): WorldSnapshot {
   const tod = tickOfDay(clock);
   const modules = {} as Record<ModuleId, ModuleState>;
   for (const id of MODULE_IDS) {
@@ -67,6 +83,6 @@ export function buildSnapshot(clock: ClockState, policy: ShiftPolicy, world: Wor
     effectivePolicy: { ...policy },
     modules,
     foodStock: world.foodStock,
-    nearbyColonists: [],
+    nearbyColonists: [...nearbyColonists],
   };
 }

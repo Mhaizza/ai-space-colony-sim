@@ -79,6 +79,8 @@ export const WEIGHT_TUNING = {
   stressDemandSuppressTilt: 0.65,
   /** provisional — memory family: scale applied to summed matching-memory influence before it becomes a weight tilt (1 + influence*scale, then clamped). */
   memoryWeightTiltScale: 0.5,
+  /** provisional — relationship family: scale applied to summed affinity/100 before it becomes a weight tilt (1 + (affinity/100)*scale, then clamped). */
+  relationshipWeightTiltScale: 0.75,
 } as const;
 
 /**
@@ -139,6 +141,8 @@ export const MEMORY_TUNING = {
   needChangeSignificance: 0.25,
   /** provisional — formation significance: minimum stress change in one event to form a memory. */
   stressChangeSignificance: 0.2,
+  /** provisional — formation significance: minimum |affinity delta| (ADR-12 scale, -100..100) in one relationship consequence to form a memory. */
+  relationshipChangeSignificance: 15,
 } as const;
 
 /** Shift policy defaults (provisional — prototype scenario values, not policy design). */
