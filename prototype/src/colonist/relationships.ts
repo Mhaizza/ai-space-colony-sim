@@ -18,10 +18,8 @@
 
 export type ColonistId = string;
 
-const UNSAFE_PROPERTY_KEYS = new Set(["__proto__", "prototype", "constructor"]);
-
 export function assertSafeColonistId(id: ColonistId, field = "colonist id"): void {
-  if (UNSAFE_PROPERTY_KEYS.has(id)) {
+  if (id === "prototype" || id in Object.prototype) {
     throw new Error(`${field} "${id}" is unsafe as a relationship-store object key`);
   }
 }
@@ -504,6 +502,7 @@ export function deserializeRelationshipStore(
   raw: unknown,
   knownColonistIds: ReadonlySet<ColonistId>,
   loadedClockTick: number,
+  requiredParticipantId?: ColonistId,
 ): RelationshipStore {
   const records = expectArray(raw, "relationships");
   const outer: Record<ColonistId, Record<ColonistId, PairRecord>> = {};
@@ -518,6 +517,9 @@ export function deserializeRelationshipStore(
     if (!(a < b)) fail(`"${field}.pair" is not in canonical [min, max] order (ADR-20 D5)`);
     if (!knownColonistIds.has(a) || !knownColonistIds.has(b)) {
       fail(`"${field}.pair" references an unknown colonist id`);
+    }
+    if (requiredParticipantId !== undefined && a !== requiredParticipantId && b !== requiredParticipantId) {
+      fail(`"${field}.pair" must include the simulated colonist id "${requiredParticipantId}"`);
     }
     if (Object.prototype.hasOwnProperty.call(outer[a] ?? {}, b)) {
       fail(`"${field}.pair" duplicates an already-loaded pair identity`);
@@ -551,12 +553,21 @@ export function deserializeRelationshipStore(
       previousTick = tick;
       previousSequence = sequence;
 
+      const initiatorId = expectNullableId(eo.initiatorId, `${entryField}.initiatorId`);
+      const responderId = expectNullableId(eo.responderId, `${entryField}.responderId`);
+      if (initiatorId !== null && !knownColonistIds.has(initiatorId)) {
+        fail(`"${entryField}.initiatorId" references an unknown colonist id`);
+      }
+      if (responderId !== null && !knownColonistIds.has(responderId)) {
+        fail(`"${entryField}.responderId" references an unknown colonist id`);
+      }
+
       return {
         tick,
         sequence,
         changeSource: expectChangeSource(eo.changeSource, `${entryField}.changeSource`),
-        initiatorId: expectNullableId(eo.initiatorId, `${entryField}.initiatorId`),
-        responderId: expectNullableId(eo.responderId, `${entryField}.responderId`),
+        initiatorId,
+        responderId,
         minTowardMaxDelta: expectFiniteNumber(eo.minTowardMaxDelta, `${entryField}.minTowardMaxDelta`),
         maxTowardMinDelta: expectFiniteNumber(eo.maxTowardMinDelta, `${entryField}.maxTowardMinDelta`),
         resultingMinTowardMaxAffinity: expectAffinity(eo.resultingMinTowardMaxAffinity, `${entryField}.resultingMinTowardMaxAffinity`),

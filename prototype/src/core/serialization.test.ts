@@ -116,6 +116,22 @@ describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)
     expect(() => deserialize(serialize(state))).toThrow(/unknown colonist id/);
   });
 
+  it("rejects a relationship pair between roster-only placeholders because only the primary colonist is simulated in this slice", () => {
+    const base = createInitialState(1, "c1", "Maya", [], [], [zeke, yara]);
+    const relationships = applyInteraction(createRelationshipStore(), {
+      colonistAId: "zeke",
+      colonistBId: "yara",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "zeke",
+      responderId: "yara",
+      aTowardBDelta: 10,
+      bTowardADelta: 10,
+    }).store;
+    const state: SimulationState = { ...base, relationships };
+    expect(() => deserialize(serialize(state))).toThrow(/simulated colonist id/);
+  });
+
   it("a real run with a 3-colonist roster (primary + 2) still round-trips exactly after ticks advance", () => {
     const state = run(createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]), 200).finalState;
     expect(state.roster).toEqual([zeke, yara]); // sanity: no tick phase ever touches the roster

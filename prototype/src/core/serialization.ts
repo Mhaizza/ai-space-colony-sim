@@ -676,7 +676,7 @@ export function deserialize(json: string): SimulationState {
     hasBootstrapped: expectBoolean(o.hasBootstrapped, "hasBootstrapped"),
     eventLog: readEventLog(o.eventLog),
     decisionLog: readDecisionLog(o.decisionLog),
-    relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick),
+    relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick, colonist.identity.id),
     roster,
   };
 

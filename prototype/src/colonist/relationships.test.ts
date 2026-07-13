@@ -39,6 +39,7 @@ describe("canonical pair identity (ADR-20 D5)", () => {
   it("rejects property-key ids that would corrupt the plain-object store", () => {
     expect(() => canonicalPairId("__proto__", "alice")).toThrow(/unsafe/i);
     expect(() => canonicalPairId("alice", "constructor")).toThrow(/unsafe/i);
+    expect(() => canonicalPairId("alice", "toString")).toThrow(/unsafe/i);
   });
 
   it("is collision-safe: nested-object storage never confuses ids that would collide under a delimiter-joined key", () => {
@@ -480,6 +481,12 @@ describe("serialization + load validation (ADR-20 D8)", () => {
       const unsafeId = validRecords();
       unsafeId[0].pair = ["__proto__", "alice"];
       expect(() => deserializeRelationshipStore(unsafeId, new Set([...KNOWN_IDS, "__proto__"]), CLOCK_TICK)).toThrow(/unsafe/i);
+
+      const inheritedObjectKey = validRecords();
+      inheritedObjectKey[0].pair = ["alice", "toString"];
+      expect(() => deserializeRelationshipStore(inheritedObjectKey, new Set([...KNOWN_IDS, "toString"]), CLOCK_TICK)).toThrow(
+        /unsafe/i,
+      );
     });
 
     it("3. missing directional affinity values", () => {
@@ -508,6 +515,10 @@ describe("serialization + load validation (ADR-20 D8)", () => {
       const wrongPairHistory = validRecords();
       wrongPairHistory[0].history[0].pair = ["bob", "carol"]; // belongs to the OTHER record
       expect(() => deserializeRelationshipStore(wrongPairHistory, KNOWN_IDS, CLOCK_TICK)).toThrow(/different pair/i);
+
+      const unknownInitiator = validRecords();
+      unknownInitiator[0].history[0].initiatorId = "ghost";
+      expect(() => deserializeRelationshipStore(unknownInitiator, KNOWN_IDS, CLOCK_TICK)).toThrow(/unknown colonist id/i);
     });
 
     it("7. history out of deterministic order, over its bound, or postdating the loaded clock", () => {
