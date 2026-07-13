@@ -519,6 +519,10 @@ describe("serialization + load validation (ADR-20 D8)", () => {
       const unknownInitiator = validRecords();
       unknownInitiator[0].history[0].initiatorId = "ghost";
       expect(() => deserializeRelationshipStore(unknownInitiator, KNOWN_IDS, CLOCK_TICK)).toThrow(/unknown colonist id/i);
+
+      const knownButWrongPairInitiator = validRecords();
+      knownButWrongPairInitiator[0].history[0].initiatorId = "carol";
+      expect(() => deserializeRelationshipStore(knownButWrongPairInitiator, KNOWN_IDS, CLOCK_TICK)).toThrow(/not a participant/i);
     });
 
     it("7. history out of deterministic order, over its bound, or postdating the loaded clock", () => {

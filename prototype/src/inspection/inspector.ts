@@ -17,7 +17,7 @@ import type { PrngState } from "../core/prng.js";
 import type { AmbientState } from "../config/constants.js";
 import type { ColonistIdentity } from "../colonist/colonist.js";
 import { isCritical, isLow, isSatisfied } from "../colonist/needs.js";
-import { pairView, type PairView, type RelationshipStore } from "../colonist/relationships.js";
+import { canonicalPairId, pairView, type PairView, type RelationshipStore } from "../colonist/relationships.js";
 import type { Goal } from "../decision/goals.js";
 import { ambientStateFor, type Execution } from "../task/execution.js";
 import { periodAt, type ShiftPeriod } from "../world/policy.js";
@@ -91,14 +91,20 @@ function detach<T>(value: T): T {
  * (lexicographic by [min, max], matching ADR-20 D5's serialization order). Read-only: calls
  * only `pairView`, never a write path, and never touches the store beyond enumerating its keys.
  */
-function allRelationshipPairViews(store: RelationshipStore): readonly PairView[] {
+function allRelationshipPairViews(store: RelationshipStore, primaryId: string, roster: readonly ColonistIdentity[]): readonly PairView[] {
   const minIds = Object.keys(store.pairs).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const views: PairView[] = [];
+  const seen = new Set<string>();
   for (const min of minIds) {
     const maxIds = Object.keys(store.pairs[min]!).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     for (const max of maxIds) {
+      seen.add(`${min}\0${max}`);
       views.push(pairView(store, min, max));
     }
+  }
+  for (const entry of roster) {
+    const [min, max] = canonicalPairId(primaryId, entry.id);
+    if (!seen.has(`${min}\0${max}`)) views.push(pairView(store, min, max));
   }
   return views;
 }
@@ -151,7 +157,7 @@ export function inspect(state: SimulationState, recentLimit = 10): InspectionSum
     foodStock: state.world.foodStock,
     recentEvents: recentEvents(state, recentLimit),
     recentDecisions: recentDecisions(state, recentLimit),
-    relationships: detach(allRelationshipPairViews(state.relationships)),
+    relationships: detach(allRelationshipPairViews(state.relationships, state.colonist.identity.id, state.roster)),
     roster: detach(state.roster),
   };
 }

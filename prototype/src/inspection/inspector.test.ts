@@ -340,6 +340,20 @@ describe("roster inspection (Stage 2 Slice 2)", () => {
     expect(summary.relationships.length).toBeGreaterThan(0);
   });
 
+  it("shows the absent-pair default for roster colonists before any relationship materializes", () => {
+    const state = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke]);
+    const summary = inspect(state);
+    expect(summary.relationships).toEqual([
+      {
+        pair: ["c1", "zeke"],
+        minTowardMax: { affinity: 0, state: "acquainted" },
+        maxTowardMin: { affinity: 0, state: "acquainted" },
+        history: [],
+        lastInteractionTick: null,
+      },
+    ]);
+  });
+
   it("a real run with no roster reports it empty (unchanged Stage 1 behavior)", () => {
     const state = run(createInitialState(1, "c1", "Maya", ["engineering"]), 100).finalState;
     expect(inspect(state).roster).toEqual([]);

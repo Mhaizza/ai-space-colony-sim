@@ -558,8 +558,14 @@ export function deserializeRelationshipStore(
       if (initiatorId !== null && !knownColonistIds.has(initiatorId)) {
         fail(`"${entryField}.initiatorId" references an unknown colonist id`);
       }
+      if (initiatorId !== null && initiatorId !== a && initiatorId !== b) {
+        fail(`"${entryField}.initiatorId" is not a participant in its relationship pair`);
+      }
       if (responderId !== null && !knownColonistIds.has(responderId)) {
         fail(`"${entryField}.responderId" references an unknown colonist id`);
+      }
+      if (responderId !== null && responderId !== a && responderId !== b) {
+        fail(`"${entryField}.responderId" is not a participant in its relationship pair`);
       }
 
       return {
