@@ -15,7 +15,18 @@ import { isPermitted } from "../world/policy.js";
 import type { WorldSnapshot } from "../world/snapshot.js";
 
 /** Stage 1's concrete task vocabulary — content within the five closed task classes (DQ-D4). */
-export type TaskId = "workAtWorkstation" | "eatAtFoodStation" | "restAtBunk" | "idlePresence";
+export type TaskId = "workAtWorkstation" | "eatAtFoodStation" | "restAtBunk" | "idlePresence" | SocialTaskId;
+
+/**
+ * ADR-18 D1's six canonical social actions — the closed social task-class vocabulary. Data
+ * only for this build step: none of these are reachable yet (candidateTaskIdsFor below still
+ * has no social-source branch), so they exist as vocabulary a colonist can be assigned but
+ * nothing yet assigns. Shared Meal is listed as its own id here for vocabulary-closure purposes;
+ * ADR-18 D3 frames it architecturally as an overlay on eatAtFoodStation (the colonist adopts
+ * "eat", social crediting activates from context) — the wiring step must honor that, not treat
+ * this id as a second independently-adopted eating goal.
+ */
+export type SocialTaskId = "conversation" | "sharedDowntime" | "sharedMeal" | "comfort" | "assist" | "confrontation";
 
 /** One task's definition: its class, the module it runs in (if any), and what it requires. */
 export interface TaskDefinition {
@@ -31,6 +42,15 @@ const TASKS: Readonly<Record<TaskId, TaskDefinition>> = {
   eatAtFoodStation: { id: "eatAtFoodStation", taskClass: "satisfaction", moduleId: "foodStation" },
   restAtBunk: { id: "restAtBunk", taskClass: "satisfaction", moduleId: "restBunk" },
   idlePresence: { id: "idlePresence", taskClass: "transitIdle", moduleId: null },
+  // ADR-18 D1 social task class — data only, unreachable until the wiring build step (see
+  // SocialTaskId doc comment above). moduleId null: these occur wherever the partner is, not
+  // at a fixed station (Shared Meal is the one exception, tied to foodStation per its overlay).
+  conversation: { id: "conversation", taskClass: "social", moduleId: null },
+  sharedDowntime: { id: "sharedDowntime", taskClass: "social", moduleId: null },
+  sharedMeal: { id: "sharedMeal", taskClass: "social", moduleId: "foodStation" },
+  comfort: { id: "comfort", taskClass: "social", moduleId: null },
+  assist: { id: "assist", taskClass: "social", moduleId: null },
+  confrontation: { id: "confrontation", taskClass: "social", moduleId: null },
 };
 
 /** Looks up a task's definition by id. */
@@ -213,5 +233,14 @@ export function isTaskComplete(
       return snapshot.currentPeriod !== "work";
     case "idlePresence":
       return snapshot.currentPeriod !== "free";
+    case "conversation":
+    case "sharedDowntime":
+    case "sharedMeal":
+    case "comfort":
+    case "assist":
+    case "confrontation":
+      // Unreachable this build step (no candidate source resolves to these yet); real
+      // completion criteria are a wiring-step decision (ADR-18 D5's participation rules).
+      return false;
   }
 }

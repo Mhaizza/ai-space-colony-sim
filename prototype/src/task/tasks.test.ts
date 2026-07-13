@@ -137,6 +137,39 @@ describe("availability — read only through WorldSnapshot", () => {
   });
 });
 
+describe("ADR-18 social task vocabulary (Build Step 1 — data only, not yet wired)", () => {
+  const socialTaskIds = ["conversation", "sharedDowntime", "sharedMeal", "comfort", "assist", "confrontation"] as const;
+
+  it("all six ADR-18 social action task kinds exist and resolve to a definition", () => {
+    for (const id of socialTaskIds) {
+      const task = taskDefinition(id);
+      expect(task.id).toBe(id);
+    }
+  });
+
+  it("the six social task ids are distinct from each other and from the Stage 1 task ids", () => {
+    const allIds = [...socialTaskIds, "workAtWorkstation", "eatAtFoodStation", "restAtBunk", "idlePresence"];
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+
+  it("all six social tasks belong to the social task class", () => {
+    for (const id of socialTaskIds) {
+      expect(taskDefinition(id).taskClass).toBe("social");
+    }
+  });
+
+  it("voluntary still resolves only to idlePresence — social tasks are not yet candidates for any goal source", () => {
+    const r = resolveTask(voluntaryGoal, [], workSnapshot);
+    expect(r.kind).toBe("executable");
+    if (r.kind === "executable") expect(r.task.id).toBe("idlePresence");
+  });
+
+  it("social need goals still find no serving task — social vocabulary exists but is not wired to any candidate source", () => {
+    const r = resolveTask(socialGoal, [], workSnapshot);
+    expect(r.kind).toBe("blocked");
+  });
+});
+
 describe("determinism", () => {
   it("identical inputs produce identical resolutions", () => {
     expect(resolveTask(hungerGoal, ["engineering"], workSnapshot)).toEqual(resolveTask(hungerGoal, ["engineering"], workSnapshot));

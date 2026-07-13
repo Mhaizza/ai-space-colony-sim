@@ -141,6 +141,16 @@ export function applyProgressConsequences(
     case "workAtWorkstation":
     case "idlePresence":
       return {};
+    case "conversation":
+    case "sharedDowntime":
+    case "sharedMeal":
+    case "comfort":
+    case "assist":
+    case "confrontation":
+      // Unreachable this build step (ADR-18 social tasks are vocabulary-only until the
+      // decision/task wiring step — see tasks.ts's SocialTaskId doc comment). No consequence
+      // defined yet; a real one is that wiring step's job, not this data-layer addition's.
+      return {};
   }
 }
 
@@ -149,6 +159,16 @@ const TASK_AMBIENT_STATE: Readonly<Record<TaskId, AmbientState>> = {
   eatAtFoodStation: "eating",
   restAtBunk: "resting",
   idlePresence: "resting", // Stage 1 gap — see module doc.
+  // ADR-18 D1's ambient-expression column, mirrored verbatim as inert data (unreachable until
+  // these tasks are wired). Shared Meal maps to "eating" here — its primary consequence layer;
+  // the "Socializing-adjacent texture" ADR-18 also describes is a wiring-step nuance, not a
+  // distinct ambient state (the seven-state vocabulary has no eighth slot for it — locked #29).
+  conversation: "socializing",
+  sharedDowntime: "socializing",
+  sharedMeal: "eating",
+  comfort: "socializing",
+  assist: "working",
+  confrontation: "inConflict",
 };
 
 /**
