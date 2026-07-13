@@ -2,6 +2,7 @@
 // validation, purity.
 
 import { describe, expect, it } from "vitest";
+import type { TraitId } from "../colonist/traits.js";
 import { NEEDS } from "../config/constants.js";
 import { setModuleFunctional } from "../world/world.js";
 import { createInitialState, run } from "./run.js";
@@ -25,6 +26,39 @@ describe("createInitialState", () => {
     const a = createInitialState(1, "c1", "Maya");
     const b = createInitialState(2, "c1", "Maya");
     expect(a.prng).not.toEqual(b.prng);
+  });
+
+  it("defaults to an empty roster (Stage 2 Slice 2) — unchanged Stage 1 behavior", () => {
+    const state = createInitialState(1, "c1", "Maya");
+    expect(state.roster).toEqual([]);
+  });
+
+  it("accepts an optional roster of other colonists", () => {
+    const roster = [{ id: "zeke", name: "Zeke", skills: [], baseTraits: [] as const }];
+    const state = createInitialState(1, "c1", "Maya", [], [], roster);
+    expect(state.roster).toEqual(roster);
+  });
+
+  it("clones roster entries at creation so caller mutation cannot change simulation state", () => {
+    const roster = [{ id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: ["driven"] as TraitId[] }];
+    const state = createInitialState(1, "c1", "Maya", [], [], roster);
+
+    roster.push({ id: "yara", name: "Yara", skills: [], baseTraits: [] });
+    roster[0]!.id = "mutated";
+    roster[0]!.name = "Mutated";
+    roster[0]!.skills.push("botany");
+    roster[0]!.baseTraits = ["gregarious"];
+
+    expect(state.roster).toEqual([{ id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: ["driven"] }]);
+  });
+
+  it("rejects roster ids that would make the initial state invalid", () => {
+    expect(() => createInitialState(1, "c1", "Maya", [], [], [{ id: "c1", name: "Clone", skills: [], baseTraits: [] }])).toThrow(
+      /duplicates the primary/i,
+    );
+    expect(() =>
+      createInitialState(1, "c1", "Maya", [], [], [{ id: "__proto__", name: "Prototype", skills: [], baseTraits: [] }]),
+    ).toThrow(/unsafe/i);
   });
 });
 

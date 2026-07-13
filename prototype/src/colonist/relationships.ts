@@ -18,6 +18,12 @@
 
 export type ColonistId = string;
 
+export function assertSafeColonistId(id: ColonistId, field = "colonist id"): void {
+  if (id === "prototype" || id in Object.prototype) {
+    throw new Error(`${field} "${id}" is unsafe as a relationship-store object key`);
+  }
+}
+
 /** Canonical pair identity: the ordered tuple [min(idA, idB), max(idA, idB)] (ADR-20 D5). */
 export type PairKey = readonly [ColonistId, ColonistId];
 
@@ -50,6 +56,8 @@ export function deriveRelationshipState(affinity: number): RelationshipState {
  * are invalid and are rejected here, not silently ignored (ADR-20 D5).
  */
 export function canonicalPairId(colonistAId: ColonistId, colonistBId: ColonistId): PairKey {
+  assertSafeColonistId(colonistAId, "colonistAId");
+  assertSafeColonistId(colonistBId, "colonistBId");
   if (colonistAId === colonistBId) {
     throw new Error("a relationship pair requires two distinct colonist ids; self-pairs are invalid (ADR-20 D5)");
   }
@@ -384,6 +392,11 @@ function expectArray(value: unknown, field: string): unknown[] {
 
 function expectStringId(value: unknown, field: string): ColonistId {
   if (typeof value !== "string") fail(`"${field}" must be a string`);
+  try {
+    assertSafeColonistId(value, field);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : `"${field}" is unsafe`);
+  }
   return value;
 }
 
@@ -489,6 +502,7 @@ export function deserializeRelationshipStore(
   raw: unknown,
   knownColonistIds: ReadonlySet<ColonistId>,
   loadedClockTick: number,
+  requiredParticipantId?: ColonistId,
 ): RelationshipStore {
   const records = expectArray(raw, "relationships");
   const outer: Record<ColonistId, Record<ColonistId, PairRecord>> = {};
@@ -503,6 +517,9 @@ export function deserializeRelationshipStore(
     if (!(a < b)) fail(`"${field}.pair" is not in canonical [min, max] order (ADR-20 D5)`);
     if (!knownColonistIds.has(a) || !knownColonistIds.has(b)) {
       fail(`"${field}.pair" references an unknown colonist id`);
+    }
+    if (requiredParticipantId !== undefined && a !== requiredParticipantId && b !== requiredParticipantId) {
+      fail(`"${field}.pair" must include the simulated colonist id "${requiredParticipantId}"`);
     }
     if (Object.prototype.hasOwnProperty.call(outer[a] ?? {}, b)) {
       fail(`"${field}.pair" duplicates an already-loaded pair identity`);
@@ -536,12 +553,27 @@ export function deserializeRelationshipStore(
       previousTick = tick;
       previousSequence = sequence;
 
+      const initiatorId = expectNullableId(eo.initiatorId, `${entryField}.initiatorId`);
+      const responderId = expectNullableId(eo.responderId, `${entryField}.responderId`);
+      if (initiatorId !== null && !knownColonistIds.has(initiatorId)) {
+        fail(`"${entryField}.initiatorId" references an unknown colonist id`);
+      }
+      if (initiatorId !== null && initiatorId !== a && initiatorId !== b) {
+        fail(`"${entryField}.initiatorId" is not a participant in its relationship pair`);
+      }
+      if (responderId !== null && !knownColonistIds.has(responderId)) {
+        fail(`"${entryField}.responderId" references an unknown colonist id`);
+      }
+      if (responderId !== null && responderId !== a && responderId !== b) {
+        fail(`"${entryField}.responderId" is not a participant in its relationship pair`);
+      }
+
       return {
         tick,
         sequence,
         changeSource: expectChangeSource(eo.changeSource, `${entryField}.changeSource`),
-        initiatorId: expectNullableId(eo.initiatorId, `${entryField}.initiatorId`),
-        responderId: expectNullableId(eo.responderId, `${entryField}.responderId`),
+        initiatorId,
+        responderId,
         minTowardMaxDelta: expectFiniteNumber(eo.minTowardMaxDelta, `${entryField}.minTowardMaxDelta`),
         maxTowardMinDelta: expectFiniteNumber(eo.maxTowardMinDelta, `${entryField}.maxTowardMinDelta`),
         resultingMinTowardMaxAffinity: expectAffinity(eo.resultingMinTowardMaxAffinity, `${entryField}.resultingMinTowardMaxAffinity`),

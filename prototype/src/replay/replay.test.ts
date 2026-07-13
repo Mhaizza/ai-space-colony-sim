@@ -284,6 +284,28 @@ describe("terminal-state verification (final review fix)", () => {
       expect(result.path).toBe("relationshipAffinityBaselines.zeke");
     }
   });
+
+  it("a multi-colonist roster replays deterministically (Stage 2 Slice 2)", () => {
+    const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
+    const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
+    const initial = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]);
+    const final = run(initial, 100).finalState;
+    expect(final.roster).toEqual([zeke, yara]); // sanity: no tick phase ever touches the roster
+    expect(verifyReplay(initial, final).kind).toBe("match");
+  });
+
+  it("identical logs but a modified roster fails at its exact path", () => {
+    const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
+    const initial = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke]);
+    const final = run(initial, 100).finalState;
+    const tampered: SimulationState = { ...final, roster: [{ ...zeke, name: "Tampered" }] };
+    const result = verifyReplay(initial, tampered);
+    expect(result.kind).toBe("divergence");
+    if (result.kind === "divergence") {
+      expect(result.log).toBe("state");
+      expect(result.path).toBe("roster[0].name");
+    }
+  });
 });
 
 describe("diverging seeds", () => {

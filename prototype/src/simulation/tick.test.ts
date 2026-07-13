@@ -41,6 +41,7 @@ function stateAtTickOfDay(
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
+    roster: [],
   };
 }
 
@@ -218,6 +219,7 @@ describe("goal interruption and resume — preserved execution progress (review 
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
+      roster: [],
     };
 
     const result = tick(state, 1);
@@ -282,6 +284,7 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
+      roster: [],
     };
 
     const result = tick(state, 1);
@@ -734,6 +737,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
+      roster: [],
     };
     validateSimulationState(overflowState); // the hand-built precondition is itself valid
     const overflowResult = tick(overflowState, 1);
@@ -773,6 +777,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships,
+      roster: [],
     };
   }
 
@@ -812,6 +817,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
+      roster: [],
     };
     const result = run(bare, SIGNIFICANT_TICKS);
     expect(result.finalState.colonist.memory.filter((e) => e.type === "relational")).toEqual([]);
@@ -839,5 +845,44 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
     const snapshot = JSON.parse(JSON.stringify(state));
     run(state, SIGNIFICANT_TICKS);
     expect(state).toEqual(snapshot);
+  });
+});
+
+describe("multi-colonist roster (Stage 2 Slice 2)", () => {
+  const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
+  const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
+
+  function stateWithRoster(roster: SimulationState["roster"]): SimulationState {
+    return { ...stateAtTickOfDay(0), roster };
+  }
+
+  it("a 2-3 colonist roster survives a real tick unchanged — no phase simulates or mutates it", () => {
+    const state = stateWithRoster([zeke, yara]);
+    const result = tick(state, 1);
+    expect(result.state.roster).toEqual([zeke, yara]);
+    expect(result.state.roster).toBe(state.roster); // same reference — never even copied
+  });
+
+  it("validateSimulationState rejects a roster entry whose id duplicates the primary colonist's own id", () => {
+    const selfReference = { id: "c1", name: "Impostor", skills: [], baseTraits: [] } as const;
+    const state = stateWithRoster([selfReference]);
+    expect(() => validateSimulationState(state)).toThrow(/duplicates the primary colonist/);
+    expect(() => tick(state, 1)).toThrow();
+  });
+
+  it("validateSimulationState rejects two roster entries sharing the same id", () => {
+    const state = stateWithRoster([zeke, { ...yara, id: "zeke" }]);
+    expect(() => validateSimulationState(state)).toThrow(/duplicate id/);
+    expect(() => tick(state, 1)).toThrow();
+  });
+
+  it("accepts a valid multi-colonist roster with no duplicate or self-referencing ids", () => {
+    const state = stateWithRoster([zeke, yara]);
+    expect(() => validateSimulationState(state)).not.toThrow();
+  });
+
+  it("an empty roster (the pre-Slice-2 default) is always valid", () => {
+    const state = stateWithRoster([]);
+    expect(() => validateSimulationState(state)).not.toThrow();
   });
 });

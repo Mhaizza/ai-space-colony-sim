@@ -61,7 +61,7 @@ export function verifySaveReplay(save: string, seed: number): ReplayResult {
   assertSeed(seed);
   const state = deserialize(save);
   const { id, name, skills, baseTraits } = state.colonist.identity;
-  const initial = createInitialState(seed, id, name, skills, baseTraits);
+  const initial = createInitialState(seed, id, name, skills, baseTraits, state.roster);
   return verifyReplay(initial, state);
 }
 
