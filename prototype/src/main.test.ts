@@ -4,6 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import { continueRun, demoRun, runCli, verifySaveReplay } from "./main.js";
+import { createInitialState, run } from "./simulation/run.js";
+import { serialize } from "./core/serialization.js";
 
 describe("deterministic run from seed", () => {
   it("the same seed and tick count produce an identical result, including the save string", () => {
@@ -84,6 +86,18 @@ describe("replay verification paths", () => {
   it("reports divergence when verifying against the wrong seed — returned, never thrown", () => {
     const output = demoRun(7, 150);
     expect(verifySaveReplay(output.save, 8).kind).toBe("divergence");
+  });
+
+  it("REGRESSION: succeeds for an untampered save whose initial state carried a roster entry", () => {
+    // verifySaveReplay rebuilds its own replay baseline via createInitialState — every field
+    // deserialize() restores onto SimulationState has to be threaded through that
+    // reconstruction too, or the rebuilt baseline silently diverges from the saved state.
+    // roster (Stage 2 Slice 2) was the one instance of this actually happening.
+    const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] as const };
+    const initial = createInitialState(7, "c1", "Maya", ["engineering"], [], [zeke]);
+    const final = run(initial, 150).finalState;
+    const result = verifySaveReplay(serialize(final), 7);
+    expect(result.kind).toBe("match");
   });
 
   it("the CLI verify command carries both the summary line and the structured result", () => {
