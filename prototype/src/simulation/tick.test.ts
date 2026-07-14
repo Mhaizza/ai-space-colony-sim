@@ -81,6 +81,19 @@ function socialExecutionState(taskId: "conversation" | "sharedDowntime", related
   };
 }
 
+function eatingExecutionState(roster = [zeke], relationships = createRelationshipStore()): SimulationState {
+  const base = stateAtTickOfDay(0, { hunger: { level: 0.35, ticksBelowLow: 10 }, social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, 13);
+  const goal = commitGoal({ source: "criticalNeed", tier: 1, key: "criticalNeed:hunger", baseUrgency: 1, relatedNeed: "hunger" }, "test hunger", base.clock.tick);
+  return {
+    ...base,
+    colonist: withCurrentGoal(base.colonist, goal),
+    execution: beginExecution(taskDefinition("eatAtFoodStation"), goal, base.clock.tick),
+    hasBootstrapped: true,
+    relationships,
+    roster,
+  };
+}
+
 describe("fixed-step enforcement (review fix 2)", () => {
   it("rejects a delta larger than BASE_TICKS_PER_STEP", () => {
     const state = stateAtTickOfDay(0);
@@ -244,6 +257,61 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
 
     expect(() => validateSimulationState(state)).toThrow(/must not target the primary colonist/);
     expect(() => tick(state, 1)).toThrow(/must not target the primary colonist/);
+  });
+});
+
+describe("shared meal overlay (Stage 2 Slice 4)", () => {
+  it("eating with non-hostile company also restores Social and applies positive relationship drift", () => {
+    const initial = eatingExecutionState();
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.hunger.level).toBeGreaterThan(initial.colonist.needs.hunger.level);
+    expect(final.colonist.needs.social.level).toBeGreaterThan(initial.colonist.needs.social.level);
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeGreaterThan(0);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBe(0);
+  });
+
+  it("eating alone keeps the pre-existing hunger behavior without Social or relationship overlay", () => {
+    const initial = eatingExecutionState([]);
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.hunger.level).toBeGreaterThan(initial.colonist.needs.hunger.level);
+    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+    expect(final.relationships).toEqual(createRelationshipStore());
+  });
+
+  it("does not apply the overlay for hostile company", () => {
+    const hostile = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: -80,
+      bTowardADelta: 0,
+    }).store;
+    const final = run(eatingExecutionState([zeke], hostile), 20).finalState;
+
+    expect(final.colonist.needs.social.level).toBeLessThan(eatingExecutionState([zeke], hostile).colonist.needs.social.level);
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeLessThan(0);
+  });
+
+  it("sharedMeal remains an overlay, not a directly adopted voluntary task", () => {
+    const freeStart = policy.workTicks + policy.restTicks;
+    const final = run({ ...stateAtTickOfDay(freeStart, {}, 31), roster: [zeke] }, 1).finalState;
+
+    expect(final.execution?.taskId).not.toBe("sharedMeal");
+  });
+
+  it("preserves replay and save/load determinism", () => {
+    const initial = eatingExecutionState();
+    const final = run(initial, 50).finalState;
+    const reloaded = deserialize(serialize(final));
+
+    expect(verifyReplay(initial, final).kind).toBe("match");
+    expect(reloaded.colonist.needs.social).toEqual(final.colonist.needs.social);
+    expect(reloaded.relationships).toEqual(final.relationships);
   });
 });
 

@@ -36,6 +36,7 @@ import {
   applyInteraction,
   assertSafeColonistId,
   canonicalPairId,
+  perspective,
   type RelationshipConsequence,
   type RelationshipStore,
 } from "../colonist/relationships.js";
@@ -336,6 +337,14 @@ function rosterObservations(roster: readonly ColonistIdentity[]): readonly Obser
   return roster.map((identity) => ({ id: identity.id, ambientState: "resting" }));
 }
 
+function sharedMealPartnerId(roster: readonly ColonistIdentity[], ownerId: string, relationships: RelationshipStore): string | undefined {
+  return roster.find((identity) => {
+    if (identity.id === ownerId) return false;
+    const state = perspective(relationships, ownerId, identity.id).state;
+    return state !== "hostile" && state !== "fractured";
+  })?.id;
+}
+
 function detectNeedThresholdCrossings(
   before: ColonistState["needs"],
   after: ColonistState["needs"],
@@ -501,9 +510,13 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   let relationships = state.relationships;
   const relationshipConsequences: RelationshipConsequence[] = [];
 
-  const activeSocialPartner = execution?.status === "inProgress" ? colonist.currentGoal?.relatedColonistId : undefined;
+  const activeSharedMealPartner =
+    execution?.status === "inProgress" && execution.taskId === "eatAtFoodStation"
+      ? sharedMealPartnerId(state.roster, colonist.identity.id, relationships)
+      : undefined;
+  const activeSocialPartner = execution?.status === "inProgress" ? (colonist.currentGoal?.relatedColonistId ?? activeSharedMealPartner) : undefined;
   const activeSocialPair =
-    activeSocialPartner !== undefined && companionshipAffinityDeltaPerTick(execution!.taskId) > 0
+    activeSocialPartner !== undefined && (companionshipAffinityDeltaPerTick(execution!.taskId) > 0 || execution!.taskId === "eatAtFoodStation")
       ? canonicalPairId(colonist.identity.id, activeSocialPartner)
       : undefined;
   const atrophyResult = applyAtrophy(relationships, deltaTicks, activeSocialPair);
@@ -515,9 +528,28 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     const progressed = progressExecution(execution, deltaTicks);
     events.push({ kind: "executionProgressed", taskId: progressed.taskId, elapsedTicks: progressed.elapsedTicks });
 
+    const worldBeforeProgress = world;
     const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks, traits);
     if (consequences.needs !== undefined) colonist = withNeeds(colonist, consequences.needs);
     if (consequences.world !== undefined) world = consequences.world;
+
+    const consumedFood =
+      progressed.taskId === "eatAtFoodStation" && consequences.world !== undefined ? worldBeforeProgress.foodStock - consequences.world.foodStock : 0;
+    if (activeSharedMealPartner !== undefined && consumedFood > 0) {
+      colonist = withNeeds(colonist, restoreNeedByAmount(colonist.needs, "social", TASK_TUNING.sharedMealSocialRestorePerTick * deltaTicks, traits));
+      const interaction = applyInteraction(relationships, {
+        colonistAId: colonist.identity.id,
+        colonistBId: activeSharedMealPartner,
+        tick: clock.tick,
+        changeSource: "sharedTaskCompletion",
+        initiatorId: colonist.identity.id,
+        responderId: activeSharedMealPartner,
+        aTowardBDelta: TASK_TUNING.sharedMealAffinityDeltaPerTick * deltaTicks,
+        bTowardADelta: 0,
+      });
+      relationships = interaction.store;
+      relationshipConsequences.push(...interaction.consequences);
+    }
 
     const relatedColonistId = colonist.currentGoal?.relatedColonistId;
     const socialRestorePerTick = socialNeedRestorePerTick(progressed.taskId);
