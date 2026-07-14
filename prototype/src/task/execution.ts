@@ -143,13 +143,16 @@ export function applyProgressConsequences(
       return {};
     case "conversation":
     case "sharedDowntime":
+      // Companionship effects need the serving goal's `relatedColonistId` and the M10 store,
+      // so tick.ts applies those after progress using this same task id. This execution-layer
+      // function remains limited to direct NeedsState/WorldState consequences.
+      return {};
     case "sharedMeal":
     case "comfort":
     case "assist":
     case "confrontation":
-      // Unreachable this build step (ADR-18 social tasks are vocabulary-only until the
-      // decision/task wiring step — see tasks.ts's SocialTaskId doc comment). No consequence
-      // defined yet; a real one is that wiring step's job, not this data-layer addition's.
+      // Not implemented in this slice. Shared Meal is an eating overlay; Comfort/Assist need
+      // responder state/condition gating; Confrontation is encounter-only.
       return {};
   }
 }

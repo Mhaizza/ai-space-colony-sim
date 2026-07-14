@@ -23,14 +23,15 @@
 // tick() once per step (run.ts).
 
 import { BASE_TICKS_PER_STEP, NEEDS, type NeedId, type PriorityTier } from "../config/constants.js";
+import { TASK_TUNING } from "../config/tuning.js";
 import type { ClockState } from "../core/clock.js";
 import { advance, tickOfDay } from "../core/clock.js";
 import type { PrngState } from "../core/prng.js";
 import type { ColonistIdentity, ColonistState } from "../colonist/colonist.js";
 import { withCurrentGoal, withMemory, withNeeds, withStress, withSuspendedGoal } from "../colonist/colonist.js";
-import { decayNeeds, isCritical, isLow, isSatisfied } from "../colonist/needs.js";
+import { decayNeeds, isCritical, isLow, isSatisfied, restoreNeedByAmount } from "../colonist/needs.js";
 import { considerConditionFormation, considerDeprivationFormation, considerRelationalFormation } from "../colonist/memory.js";
-import { applyAtrophy, assertSafeColonistId, type RelationshipStore } from "../colonist/relationships.js";
+import { applyAtrophy, applyInteraction, assertSafeColonistId, type RelationshipConsequence, type RelationshipStore } from "../colonist/relationships.js";
 import { evaluateStress, type StressContribution } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { ShiftPeriod, ShiftPolicy } from "../world/policy.js";
@@ -286,6 +287,28 @@ export function createFreshMemoryBaselines(): Pick<
   return { deprivationBaselines, stressBaseline: 0, relationshipAffinityBaselines: {} };
 }
 
+function socialNeedRestorePerTick(taskId: TaskId): number {
+  switch (taskId) {
+    case "conversation":
+      return TASK_TUNING.conversationSocialRestorePerTick;
+    case "sharedDowntime":
+      return TASK_TUNING.sharedDowntimeSocialRestorePerTick;
+    default:
+      return 0;
+  }
+}
+
+function companionshipAffinityDeltaPerTick(taskId: TaskId): number {
+  switch (taskId) {
+    case "conversation":
+      return TASK_TUNING.conversationAffinityDeltaPerTick;
+    case "sharedDowntime":
+      return TASK_TUNING.sharedDowntimeAffinityDeltaPerTick;
+    default:
+      return 0;
+  }
+}
+
 function detectNeedThresholdCrossings(
   before: ColonistState["needs"],
   after: ColonistState["needs"],
@@ -448,6 +471,8 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   let world = state.world;
   let execution = state.execution;
   let suspendedExecution = state.suspendedExecution;
+  let relationships = state.relationships;
+  const relationshipConsequences: RelationshipConsequence[] = [];
 
   // --- Phase: execution progress and its owned consequences ---
   if (execution !== null && execution.status === "inProgress") {
@@ -457,6 +482,29 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks, traits);
     if (consequences.needs !== undefined) colonist = withNeeds(colonist, consequences.needs);
     if (consequences.world !== undefined) world = consequences.world;
+
+    const relatedColonistId = colonist.currentGoal?.relatedColonistId;
+    const socialRestorePerTick = socialNeedRestorePerTick(progressed.taskId);
+    const affinityDeltaPerTick = companionshipAffinityDeltaPerTick(progressed.taskId);
+    if (relatedColonistId !== undefined && (socialRestorePerTick > 0 || affinityDeltaPerTick > 0)) {
+      if (socialRestorePerTick > 0) {
+        colonist = withNeeds(colonist, restoreNeedByAmount(colonist.needs, "social", socialRestorePerTick * deltaTicks, traits));
+      }
+      if (affinityDeltaPerTick > 0) {
+        const interaction = applyInteraction(relationships, {
+          colonistAId: colonist.identity.id,
+          colonistBId: relatedColonistId,
+          tick: clock.tick,
+          changeSource: "sharedTaskCompletion",
+          initiatorId: colonist.identity.id,
+          responderId: relatedColonistId,
+          aTowardBDelta: affinityDeltaPerTick * deltaTicks,
+          bTowardADelta: affinityDeltaPerTick * deltaTicks,
+        });
+        relationships = interaction.store;
+        relationshipConsequences.push(...interaction.consequences);
+      }
+    }
 
     execution = progressed;
   } else if (execution === null && !state.hasBootstrapped) {
@@ -504,23 +552,17 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     events.push({ kind: "memoryFormed", memoryType: "condition" });
   }
 
-  // --- Phase: relationship atrophy (M10) + Relational memory formation (M9) — Stage 2 build
-  // step 8. Atrophy is the narrowest real per-tick source of relationship consequences: it
-  // needs no new social-action/interaction-trigger system (Stage 1 has none), mirroring how
-  // needs/stress decay every tick regardless of any task running. Consequences are fact-only
-  // (ADR-20 D7); this phase reads only a consequence's own delta/resulting-affinity fields,
-  // never the store's materialized records or their past-interaction log (M10 remains the sole
-  // owner of that shape and those rules). A single tick's atrophy movement is far below
-  // significance by design — exactly like need/stress decay — so `relationshipAffinityBaselines`
-  // tracks cumulative drift per partner, the same pattern as `stressBaseline` above:
-  // `considerRelationalFormation` is offered the full delta since the baseline every tick, and
-  // only a formed memory (or first sighting a pair) moves the baseline. Real single-colonist
-  // runs have no materialized pairs, so this is a no-op there — unchanged behavior — until a
-  // pair actually exists (e.g. a loaded save, or a future multi-colonist roster).
-  const atrophyResult = applyAtrophy(state.relationships, deltaTicks);
-  const relationships = atrophyResult.store;
+  // --- Phase: relationship consequences (M10) + Relational memory formation (M9). Social
+  // execution may emit accepted-interaction facts; atrophy may emit avoidance facts. Both are
+  // fact-only (ADR-20 D7), and this phase reads only each consequence's own delta/resulting
+  // affinity fields — never the store's materialized records or their past-interaction log
+  // (M10 remains the sole owner of that shape and those rules). Baselines track cumulative
+  // movement per partner, the same pattern as `stressBaseline`.
+  const atrophyResult = applyAtrophy(relationships, deltaTicks);
+  relationships = atrophyResult.store;
+  relationshipConsequences.push(...atrophyResult.consequences);
   let relationshipAffinityBaselines = state.relationshipAffinityBaselines;
-  for (const consequence of atrophyResult.consequences) {
+  for (const consequence of relationshipConsequences) {
     const [min, max] = consequence.pair;
     const ownerIsMin = min === colonist.identity.id;
     const ownerIsMax = max === colonist.identity.id;

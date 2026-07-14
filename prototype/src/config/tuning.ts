@@ -129,6 +129,14 @@ export const TRAIT_TUNING = {
 export const TASK_TUNING = {
   /** provisional — food stock units consumed per tick of eatAtFoodStation progress. */
   foodConsumptionPerTick: 0.05,
+  /** provisional — Social need restored per tick of active Conversation participation (ADR-18 D1/D6). */
+  conversationSocialRestorePerTick: 0.003,
+  /** provisional — Social need restored per tick of active Shared Downtime participation (ADR-18 D1/D6). */
+  sharedDowntimeSocialRestorePerTick: 0.002,
+  /** provisional — directional affinity drift per tick from Conversation participation (ADR-18 D6: positive low). */
+  conversationAffinityDeltaPerTick: 0.05,
+  /** provisional — directional affinity drift per tick from Shared Downtime; intentionally no stronger than Conversation. */
+  sharedDowntimeAffinityDeltaPerTick: 0.03,
 } as const;
 
 /** Memory calibration (all provisional — DQ-M1). */

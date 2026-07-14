@@ -174,7 +174,10 @@ describe("ADR-18 social task vocabulary (Build Step 1 — data only, not yet wir
   it("social voluntary resolves to the first reachable sought social action, not idlePresence", () => {
     const r = resolveTask(socialVoluntaryGoal, [], workSnapshot);
     expect(r.kind).toBe("executable");
-    if (r.kind === "executable") expect(r.task.id).toBe("conversation");
+    if (r.kind === "executable") {
+      expect(r.task.id).toBe("conversation");
+      expect(r.task.id).not.toBe("confrontation");
+    }
   });
 
   it("social need goals still find no serving task — social vocabulary exists but is not wired to any candidate source", () => {
