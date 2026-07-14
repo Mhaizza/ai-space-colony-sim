@@ -258,6 +258,22 @@ export function validateSimulationState(state: SimulationState): void {
     }
     seenRosterIds.add(id);
   }
+
+  const knownRosterIds = new Set(rosterIds);
+  for (const [field, goal] of [
+    ["currentGoal", currentGoal],
+    ["suspendedGoal", suspendedGoal],
+  ] as const) {
+    const targetId = goal?.relatedColonistId;
+    if (targetId === undefined) continue;
+    assertSafeColonistId(targetId, `${field}.relatedColonistId`);
+    if (targetId === state.colonist.identity.id) {
+      throw new Error(`Invalid SimulationState: ${field}.relatedColonistId must not target the primary colonist's own id.`);
+    }
+    if (!knownRosterIds.has(targetId)) {
+      throw new Error(`Invalid SimulationState: ${field}.relatedColonistId "${targetId}" is not present in the roster.`);
+    }
+  }
 }
 
 /**
@@ -474,6 +490,10 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   let relationships = state.relationships;
   const relationshipConsequences: RelationshipConsequence[] = [];
 
+  const atrophyResult = applyAtrophy(relationships, deltaTicks);
+  relationships = atrophyResult.store;
+  relationshipConsequences.push(...atrophyResult.consequences);
+
   // --- Phase: execution progress and its owned consequences ---
   if (execution !== null && execution.status === "inProgress") {
     const progressed = progressExecution(execution, deltaTicks);
@@ -499,7 +519,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
           initiatorId: colonist.identity.id,
           responderId: relatedColonistId,
           aTowardBDelta: affinityDeltaPerTick * deltaTicks,
-          bTowardADelta: affinityDeltaPerTick * deltaTicks,
+          bTowardADelta: 0,
         });
         relationships = interaction.store;
         relationshipConsequences.push(...interaction.consequences);
@@ -558,9 +578,6 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // affinity fields — never the store's materialized records or their past-interaction log
   // (M10 remains the sole owner of that shape and those rules). Baselines track cumulative
   // movement per partner, the same pattern as `stressBaseline`.
-  const atrophyResult = applyAtrophy(relationships, deltaTicks);
-  relationships = atrophyResult.store;
-  relationshipConsequences.push(...atrophyResult.consequences);
   let relationshipAffinityBaselines = state.relationshipAffinityBaselines;
   for (const consequence of relationshipConsequences) {
     const [min, max] = consequence.pair;

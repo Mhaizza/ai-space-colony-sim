@@ -28,6 +28,15 @@ const socialVoluntaryGoal = goalFor({
   key: "voluntary:social:zeke",
   baseUrgency: 0.2,
   relatedColonistId: "zeke",
+  relatedSocialTaskId: "conversation",
+});
+const sharedDowntimeVoluntaryGoal = goalFor({
+  source: "voluntary",
+  tier: 5,
+  key: "voluntary:social:sharedDowntime:zeke",
+  baseUrgency: 0.2,
+  relatedColonistId: "zeke",
+  relatedSocialTaskId: "sharedDowntime",
 });
 const safetyGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:safety", baseUrgency: 0.3, relatedNeed: "safety" });
 const socialGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:social", baseUrgency: 0.3, relatedNeed: "social" });
@@ -179,6 +188,12 @@ describe("ADR-18 social task vocabulary (Build Step 1 — data only, not yet wir
       expect(r.task.id).toBe("conversation");
       expect(r.task.id).not.toBe("confrontation");
     }
+  });
+
+  it("shared-downtime social voluntary resolves to sharedDowntime, not conversation", () => {
+    const r = resolveTask(sharedDowntimeVoluntaryGoal, [], workSnapshot);
+    expect(r.kind).toBe("executable");
+    if (r.kind === "executable") expect(r.task.id).toBe("sharedDowntime");
   });
 
   it("social need goals still find no serving task — social vocabulary exists but is not wired to any candidate source", () => {

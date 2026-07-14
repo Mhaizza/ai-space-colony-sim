@@ -241,6 +241,10 @@ function readGoal(raw: unknown, field: string): Goal {
     key: expectString(o.key, `${field}.key`),
     relatedNeed: o.relatedNeed === undefined ? undefined : expectOneOf(o.relatedNeed, NEEDS, `${field}.relatedNeed`),
     relatedColonistId: o.relatedColonistId === undefined ? undefined : expectString(o.relatedColonistId, `${field}.relatedColonistId`),
+    relatedSocialTaskId:
+      o.relatedSocialTaskId === undefined
+        ? undefined
+        : expectOneOf(o.relatedSocialTaskId, ["conversation", "sharedDowntime"] as const, `${field}.relatedSocialTaskId`),
     status: expectOneOf(o.status, GOAL_STATUSES, `${field}.status`),
     motivation: expectString(o.motivation, `${field}.motivation`),
     adoptedAtTick: expectNonNegativeInteger(o.adoptedAtTick, `${field}.adoptedAtTick`),

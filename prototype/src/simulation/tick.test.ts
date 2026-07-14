@@ -11,6 +11,7 @@ import { createPrng } from "../core/prng.js";
 import { deserialize, serialize } from "../core/serialization.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional } from "../world/world.js";
+import { TASK_TUNING } from "../config/tuning.js";
 import { createColonist, withCurrentGoal, withNeeds, withSuspendedGoal } from "../colonist/colonist.js";
 import { createNeeds } from "../colonist/needs.js";
 import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState } from "./tick.js";
@@ -66,6 +67,7 @@ function socialExecutionState(taskId: "conversation" | "sharedDowntime", related
       key: relatedColonistId === null ? "voluntary:solo" : `voluntary:social:${relatedColonistId}`,
       baseUrgency: 0.2,
       relatedColonistId: relatedColonistId ?? undefined,
+      relatedSocialTaskId: relatedColonistId === null ? undefined : taskId,
     },
     "test social motivation",
     base.clock.tick,
@@ -140,7 +142,14 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
     const final = run(socialExecutionState("conversation"), 20).finalState;
 
     expect(perspective(final.relationships, "c1", "zeke").affinity).toBeGreaterThan(0);
-    expect(perspective(final.relationships, "zeke", "c1").affinity).toBeGreaterThan(0);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBeLessThanOrEqual(0);
+  });
+
+  it("does not apply atrophy to a pair created by the current tick's interaction", () => {
+    const final = run(socialExecutionState("conversation"), 1).finalState;
+
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBe(TASK_TUNING.conversationAffinityDeltaPerTick);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBe(0);
   });
 
   it("sharedDowntime applies positive relationship drift no stronger than conversation", () => {
@@ -183,6 +192,20 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
 
     expect(final.relationships).toEqual(createRelationshipStore());
     expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+  });
+
+  it("rejects a social execution target that is not in the roster", () => {
+    const state = socialExecutionState("conversation", "ghost");
+
+    expect(() => validateSimulationState(state)).toThrow(/not present in the roster/);
+    expect(() => tick(state, 1)).toThrow(/not present in the roster/);
+  });
+
+  it("rejects a social execution target that points at the primary colonist", () => {
+    const state = socialExecutionState("conversation", "c1");
+
+    expect(() => validateSimulationState(state)).toThrow(/must not target the primary colonist/);
+    expect(() => tick(state, 1)).toThrow(/must not target the primary colonist/);
   });
 });
 

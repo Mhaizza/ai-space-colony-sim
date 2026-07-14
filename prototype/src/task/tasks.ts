@@ -68,12 +68,13 @@ function candidateTaskIdsFor(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
   relatedColonistId: string | undefined,
+  relatedSocialTaskId: "conversation" | "sharedDowntime" | undefined,
 ): readonly TaskId[] {
   switch (source) {
     case "shiftAssignment":
       return ["workAtWorkstation"];
     case "voluntary":
-      if (relatedColonistId !== undefined) return ["conversation", "sharedDowntime"];
+      if (relatedColonistId !== undefined && relatedSocialTaskId !== undefined) return [relatedSocialTaskId];
       return ["idlePresence"];
     case "criticalNeed":
     case "lowNeed":
@@ -149,10 +150,11 @@ function findServingTask(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
   relatedColonistId: string | undefined,
+  relatedSocialTaskId: "conversation" | "sharedDowntime" | undefined,
   skills: readonly string[],
   snapshot: WorldSnapshot,
 ): TaskSearchResult {
-  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed, relatedColonistId)].sort(); // stable order (EQ-2)
+  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed, relatedColonistId, relatedSocialTaskId)].sort(); // stable order (EQ-2)
   if (candidateIds.length === 0) {
     return {
       found: false,
@@ -191,7 +193,7 @@ export function resolveTask(goal: Goal, skills: readonly string[], snapshot: Wor
     throw new Error(`resolveTask requires an active goal, got status "${goal.status}"`);
   }
 
-  const result = findServingTask(goal.source, goal.relatedNeed, goal.relatedColonistId, skills, snapshot);
+  const result = findServingTask(goal.source, goal.relatedNeed, goal.relatedColonistId, goal.relatedSocialTaskId, skills, snapshot);
   if (result.found) {
     return { kind: "executable", task: result.task, goal };
   }
@@ -210,10 +212,11 @@ export function candidateActionability(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
   relatedColonistId: string | undefined,
+  relatedSocialTaskId: "conversation" | "sharedDowntime" | undefined,
   skills: readonly string[],
   snapshot: WorldSnapshot,
 ): TaskSearchResult {
-  return findServingTask(source, relatedNeed, relatedColonistId, skills, snapshot);
+  return findServingTask(source, relatedNeed, relatedColonistId, relatedSocialTaskId, skills, snapshot);
 }
 
 /**

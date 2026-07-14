@@ -55,8 +55,9 @@ describe("complete state round-trip", () => {
     const socialGoal: Goal = {
       source: "voluntary",
       tier: 5,
-      key: "voluntary:social:npc-42",
+      key: "voluntary:social:conversation:npc-42",
       relatedColonistId: "npc-42",
+      relatedSocialTaskId: "conversation",
       status: "active",
       motivation: "free-time social candidate",
       adoptedAtTick: 0,
@@ -64,6 +65,7 @@ describe("complete state round-trip", () => {
     const withSocialGoal: SimulationState = {
       ...base,
       colonist: { ...base.colonist, currentGoal: socialGoal },
+      roster: [{ id: "npc-42", name: "NPC 42", skills: [], baseTraits: [] }],
     };
     const reloaded = deserialize(serialize(withSocialGoal));
     expect(reloaded.colonist.currentGoal).toEqual(socialGoal);
