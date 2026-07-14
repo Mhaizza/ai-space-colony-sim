@@ -7,11 +7,12 @@ import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional, consumeFood } from "../world/world.js";
 import { buildSnapshot, type WorldSnapshot } from "../world/snapshot.js";
 import { commitGoal, type Goal, type GoalCandidate } from "../decision/goals.js";
-import { checkAvailability, checkEligibility, resolveTask, taskDefinition } from "./tasks.js";
+import { checkAvailability, checkEligibility, isTaskComplete, resolveTask, taskDefinition } from "./tasks.js";
 
 const policy = createDefaultPolicy();
 const world = createWorld();
 const workSnapshot: WorldSnapshot = buildSnapshot(advance(createClock(), 0), policy, world);
+const freeSnapshot: WorldSnapshot = buildSnapshot(advance(createClock(), policy.workTicks + policy.restTicks), policy, world);
 
 function goalFor(candidate: GoalCandidate): Goal {
   return commitGoal(candidate, "test", 0);
@@ -183,6 +184,13 @@ describe("ADR-18 social task vocabulary (Build Step 1 — data only, not yet wir
   it("social need goals still find no serving task — social vocabulary exists but is not wired to any candidate source", () => {
     const r = resolveTask(socialGoal, [], workSnapshot);
     expect(r.kind).toBe("blocked");
+  });
+
+  it("reachable companionship tasks complete when free time ends", () => {
+    expect(isTaskComplete("conversation", () => false, freeSnapshot)).toBe(false);
+    expect(isTaskComplete("sharedDowntime", () => false, freeSnapshot)).toBe(false);
+    expect(isTaskComplete("conversation", () => false, workSnapshot)).toBe(true);
+    expect(isTaskComplete("sharedDowntime", () => false, workSnapshot)).toBe(true);
   });
 });
 

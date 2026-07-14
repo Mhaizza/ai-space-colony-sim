@@ -240,12 +240,13 @@ export function isTaskComplete(
       return snapshot.currentPeriod !== "free";
     case "conversation":
     case "sharedDowntime":
+      return snapshot.currentPeriod !== "free";
     case "sharedMeal":
     case "comfort":
     case "assist":
     case "confrontation":
-      // Unreachable this build step (no candidate source resolves to these yet); real
-      // completion criteria are a wiring-step decision (ADR-18 D5's participation rules).
+      // Not adopted in this slice; real completion criteria are a wiring-step decision
+      // (ADR-18 D5's participation rules).
       return false;
   }
 }
