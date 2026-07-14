@@ -141,6 +141,19 @@ export function applyProgressConsequences(
     case "workAtWorkstation":
     case "idlePresence":
       return {};
+    case "conversation":
+    case "sharedDowntime":
+      // Companionship effects need the serving goal's `relatedColonistId` and the M10 store,
+      // so tick.ts applies those after progress using this same task id. This execution-layer
+      // function remains limited to direct NeedsState/WorldState consequences.
+      return {};
+    case "sharedMeal":
+    case "comfort":
+    case "assist":
+    case "confrontation":
+      // Not implemented in this slice. Shared Meal is an eating overlay; Comfort/Assist need
+      // responder state/condition gating; Confrontation is encounter-only.
+      return {};
   }
 }
 
@@ -149,6 +162,16 @@ const TASK_AMBIENT_STATE: Readonly<Record<TaskId, AmbientState>> = {
   eatAtFoodStation: "eating",
   restAtBunk: "resting",
   idlePresence: "resting", // Stage 1 gap — see module doc.
+  // ADR-18 D1's ambient-expression column, mirrored verbatim as inert data (unreachable until
+  // these tasks are wired). Shared Meal maps to "eating" here — its primary consequence layer;
+  // the "Socializing-adjacent texture" ADR-18 also describes is a wiring-step nuance, not a
+  // distinct ambient state (the seven-state vocabulary has no eighth slot for it — locked #29).
+  conversation: "socializing",
+  sharedDowntime: "socializing",
+  sharedMeal: "eating",
+  comfort: "socializing",
+  assist: "working",
+  confrontation: "inConflict",
 };
 
 /**

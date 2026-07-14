@@ -47,7 +47,18 @@ const EXECUTION_STATUSES: readonly ExecutionStatus[] = ["inProgress", "interrupt
 // Closed sets not exported as arrays by their owning modules (only as TS union types) — mirrored
 // here for structural validation only. Owning module remains tasks.ts/policy.ts/traits.ts/
 // weights.ts; this list must track their type definitions but decides nothing behaviorally.
-const TASK_IDS: readonly TaskId[] = ["workAtWorkstation", "eatAtFoodStation", "restAtBunk", "idlePresence"];
+const TASK_IDS: readonly TaskId[] = [
+  "workAtWorkstation",
+  "eatAtFoodStation",
+  "restAtBunk",
+  "idlePresence",
+  "conversation",
+  "sharedDowntime",
+  "sharedMeal",
+  "comfort",
+  "assist",
+  "confrontation",
+];
 const SHIFT_PERIODS: readonly ShiftPeriod[] = ["work", "rest", "free"];
 const TRAIT_IDS: readonly TraitId[] = ["driven", "resilient", "gregarious", "wary"];
 const STRESS_CHANNELS: readonly StressChannel[] = ["reliefBoost", "demandSuppress"];
@@ -230,6 +241,10 @@ function readGoal(raw: unknown, field: string): Goal {
     key: expectString(o.key, `${field}.key`),
     relatedNeed: o.relatedNeed === undefined ? undefined : expectOneOf(o.relatedNeed, NEEDS, `${field}.relatedNeed`),
     relatedColonistId: o.relatedColonistId === undefined ? undefined : expectString(o.relatedColonistId, `${field}.relatedColonistId`),
+    relatedSocialTaskId:
+      o.relatedSocialTaskId === undefined
+        ? undefined
+        : expectOneOf(o.relatedSocialTaskId, ["conversation", "sharedDowntime"] as const, `${field}.relatedSocialTaskId`),
     status: expectOneOf(o.status, GOAL_STATUSES, `${field}.status`),
     motivation: expectString(o.motivation, `${field}.motivation`),
     adoptedAtTick: expectNonNegativeInteger(o.adoptedAtTick, `${field}.adoptedAtTick`),

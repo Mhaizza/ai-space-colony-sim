@@ -15,7 +15,18 @@ import { isPermitted } from "../world/policy.js";
 import type { WorldSnapshot } from "../world/snapshot.js";
 
 /** Stage 1's concrete task vocabulary — content within the five closed task classes (DQ-D4). */
-export type TaskId = "workAtWorkstation" | "eatAtFoodStation" | "restAtBunk" | "idlePresence";
+export type TaskId = "workAtWorkstation" | "eatAtFoodStation" | "restAtBunk" | "idlePresence" | SocialTaskId;
+
+/**
+ * ADR-18 D1's six canonical social actions — the closed social task-class vocabulary. Data
+ * Conversation and Shared Downtime are reachable for voluntary goals with a partner; the
+ * condition-gated actions stay vocabulary-only until their own wiring. Shared Meal is listed
+ * as its own id here for vocabulary-closure purposes;
+ * ADR-18 D3 frames it architecturally as an overlay on eatAtFoodStation (the colonist adopts
+ * "eat", social crediting activates from context) — the wiring step must honor that, not treat
+ * this id as a second independently-adopted eating goal.
+ */
+export type SocialTaskId = "conversation" | "sharedDowntime" | "sharedMeal" | "comfort" | "assist" | "confrontation";
 
 /** One task's definition: its class, the module it runs in (if any), and what it requires. */
 export interface TaskDefinition {
@@ -31,6 +42,14 @@ const TASKS: Readonly<Record<TaskId, TaskDefinition>> = {
   eatAtFoodStation: { id: "eatAtFoodStation", taskClass: "satisfaction", moduleId: "foodStation" },
   restAtBunk: { id: "restAtBunk", taskClass: "satisfaction", moduleId: "restBunk" },
   idlePresence: { id: "idlePresence", taskClass: "transitIdle", moduleId: null },
+  // ADR-18 D1 social task class. moduleId null: these occur wherever the partner is, not
+  // at a fixed station (Shared Meal is the one exception, tied to foodStation per its overlay).
+  conversation: { id: "conversation", taskClass: "social", moduleId: null },
+  sharedDowntime: { id: "sharedDowntime", taskClass: "social", moduleId: null },
+  sharedMeal: { id: "sharedMeal", taskClass: "social", moduleId: "foodStation" },
+  comfort: { id: "comfort", taskClass: "social", moduleId: null },
+  assist: { id: "assist", taskClass: "social", moduleId: null },
+  confrontation: { id: "confrontation", taskClass: "social", moduleId: null },
 };
 
 /** Looks up a task's definition by id. */
@@ -42,15 +61,20 @@ export function taskDefinition(id: TaskId): TaskDefinition {
  * The candidate task ids that could serve a goal, by source (and, for need-driven sources,
  * by which need). Closed and structural for Stage 1: Safety, Social, and Purpose have no
  * serving task here — Safety and Purpose are satisfied by conditions, not an action (ADR-17
- * D9); Social's action vocabulary is entirely ADR-18, not built yet. A lowNeed goal for any
- * of those three correctly finds no task and resolves to blocked — this is the architecturally
- * expected "Social is unsatisfiable at 1 colonist" shape, not a gap to paper over.
+ * D9); deliberate social actions enter as voluntary partner goals. A lowNeed goal for any of
+ * those three correctly finds no task and resolves to blocked.
  */
-function candidateTaskIdsFor(source: GoalSource, relatedNeed: NeedId | undefined): readonly TaskId[] {
+function candidateTaskIdsFor(
+  source: GoalSource,
+  relatedNeed: NeedId | undefined,
+  relatedColonistId: string | undefined,
+  relatedSocialTaskId: "conversation" | "sharedDowntime" | undefined,
+): readonly TaskId[] {
   switch (source) {
     case "shiftAssignment":
       return ["workAtWorkstation"];
     case "voluntary":
+      if (relatedColonistId !== undefined && relatedSocialTaskId !== undefined) return [relatedSocialTaskId];
       return ["idlePresence"];
     case "criticalNeed":
     case "lowNeed":
@@ -125,10 +149,12 @@ type TaskSearchResult =
 function findServingTask(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
+  relatedColonistId: string | undefined,
+  relatedSocialTaskId: "conversation" | "sharedDowntime" | undefined,
   skills: readonly string[],
   snapshot: WorldSnapshot,
 ): TaskSearchResult {
-  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed)].sort(); // stable order (EQ-2)
+  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed, relatedColonistId, relatedSocialTaskId)].sort(); // stable order (EQ-2)
   if (candidateIds.length === 0) {
     return {
       found: false,
@@ -167,7 +193,7 @@ export function resolveTask(goal: Goal, skills: readonly string[], snapshot: Wor
     throw new Error(`resolveTask requires an active goal, got status "${goal.status}"`);
   }
 
-  const result = findServingTask(goal.source, goal.relatedNeed, skills, snapshot);
+  const result = findServingTask(goal.source, goal.relatedNeed, goal.relatedColonistId, goal.relatedSocialTaskId, skills, snapshot);
   if (result.found) {
     return { kind: "executable", task: result.task, goal };
   }
@@ -185,10 +211,12 @@ export function resolveTask(goal: Goal, skills: readonly string[], snapshot: Wor
 export function candidateActionability(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
+  relatedColonistId: string | undefined,
+  relatedSocialTaskId: "conversation" | "sharedDowntime" | undefined,
   skills: readonly string[],
   snapshot: WorldSnapshot,
 ): TaskSearchResult {
-  return findServingTask(source, relatedNeed, skills, snapshot);
+  return findServingTask(source, relatedNeed, relatedColonistId, relatedSocialTaskId, skills, snapshot);
 }
 
 /**
@@ -213,5 +241,15 @@ export function isTaskComplete(
       return snapshot.currentPeriod !== "work";
     case "idlePresence":
       return snapshot.currentPeriod !== "free";
+    case "conversation":
+    case "sharedDowntime":
+      return snapshot.currentPeriod !== "free";
+    case "sharedMeal":
+    case "comfort":
+    case "assist":
+    case "confrontation":
+      // Not adopted in this slice; real completion criteria are a wiring-step decision
+      // (ADR-18 D5's participation rules).
+      return false;
   }
 }

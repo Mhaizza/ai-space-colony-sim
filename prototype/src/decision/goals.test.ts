@@ -42,13 +42,21 @@ describe("source 1 — station survival (tier 1)", () => {
 });
 
 describe("social candidate target preservation", () => {
-  it("commitGoal carries relatedColonistId forward without forcing later layers to parse key", () => {
+  it("commitGoal carries social target/action forward without forcing later layers to parse key", () => {
     const goal = commitGoal(
-      { source: "voluntary", tier: 5, key: "voluntary:social:zeke", baseUrgency: 0.2, relatedColonistId: "zeke" },
+      {
+        source: "voluntary",
+        tier: 5,
+        key: "voluntary:social:conversation:zeke",
+        baseUrgency: 0.2,
+        relatedColonistId: "zeke",
+        relatedSocialTaskId: "conversation",
+      },
       "social motivation",
       100,
     );
     expect(goal.relatedColonistId).toBe("zeke");
+    expect(goal.relatedSocialTaskId).toBe("conversation");
   });
 });
 
@@ -126,12 +134,17 @@ describe("source 5 — social voluntary candidates from nearby colonists (Stage 
     { id: "yara", ambientState: "working" },
   ];
 
-  it("generates one tier-5 social candidate per snapshot-reported nearby colonist, tagged with relatedColonistId", () => {
+  it("generates companionship social candidates per snapshot-reported nearby colonist, tagged with target and action", () => {
     const snapshot = buildSnapshot(advance(createClock(), policy.workTicks + policy.restTicks), policy, world, nearby);
     const candidates = generateCandidates(snapshot, createNeeds());
     const social = candidates.filter((c) => c.relatedColonistId !== undefined);
-    expect(social).toHaveLength(2);
-    expect(social.map((c) => c.relatedColonistId).sort()).toEqual(["yara", "zeke"]);
+    expect(social).toHaveLength(4);
+    expect(social.map((c) => `${c.relatedSocialTaskId}:${c.relatedColonistId}`).sort()).toEqual([
+      "conversation:yara",
+      "conversation:zeke",
+      "sharedDowntime:yara",
+      "sharedDowntime:zeke",
+    ]);
     expect(social.every((c) => c.source === "voluntary" && c.tier === 5)).toBe(true);
   });
 

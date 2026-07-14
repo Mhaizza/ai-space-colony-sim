@@ -8,17 +8,20 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { advance, createClock } from "../core/clock.js";
 import { createPrng } from "../core/prng.js";
+import { deserialize, serialize } from "../core/serialization.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional } from "../world/world.js";
+import { TASK_TUNING } from "../config/tuning.js";
 import { createColonist, withCurrentGoal, withNeeds, withSuspendedGoal } from "../colonist/colonist.js";
 import { createNeeds } from "../colonist/needs.js";
 import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState } from "./tick.js";
 import { run } from "./run.js";
+import { verifyReplay } from "../replay/replay.js";
 import { commitGoal, suspendGoal } from "../decision/goals.js";
 import { beginExecution, interruptExecution } from "../task/execution.js";
 import { taskDefinition } from "../task/tasks.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
-import { applyInteraction, createRelationshipStore } from "../colonist/relationships.js";
+import { applyInteraction, createRelationshipStore, perspective } from "../colonist/relationships.js";
 
 const policy = createDefaultPolicy();
 
@@ -42,6 +45,39 @@ function stateAtTickOfDay(
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
     roster: [],
+  };
+}
+
+const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
+
+function socialExecutionState(taskId: "conversation" | "sharedDowntime", relatedColonistId: string | null = "zeke"): SimulationState {
+  const freeStart = policy.workTicks + policy.restTicks;
+  const base = stateAtTickOfDay(
+    freeStart,
+    {
+      social: { level: 0.45, ticksBelowLow: 0 },
+      purpose: { level: 0.5, ticksBelowLow: 0 },
+    },
+    11,
+  );
+  const goal = commitGoal(
+    {
+      source: "voluntary",
+      tier: 5,
+      key: relatedColonistId === null ? "voluntary:solo" : `voluntary:social:${relatedColonistId}`,
+      baseUrgency: 0.2,
+      relatedColonistId: relatedColonistId ?? undefined,
+      relatedSocialTaskId: relatedColonistId === null ? undefined : taskId,
+    },
+    "test social motivation",
+    base.clock.tick,
+  );
+  return {
+    ...base,
+    colonist: withCurrentGoal(base.colonist, goal),
+    execution: beginExecution(taskDefinition(taskId), goal, base.clock.tick),
+    hasBootstrapped: true,
+    roster: [zeke],
   };
 }
 
@@ -91,6 +127,123 @@ describe("full end-to-end tick", () => {
     const initial = stateAtTickOfDay(0);
     const result = run(initial, 5);
     expect(result.finalState.clock.tick).toBe(5);
+  });
+});
+
+describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () => {
+  it("organic bootstrap sees roster members as nearby social candidates", () => {
+    const freeStart = policy.workTicks + policy.restTicks;
+    const base = stateAtTickOfDay(freeStart, {}, 31);
+    const warmRelationship = applyInteraction(base.relationships, {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: base.clock.tick,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 80,
+      bTowardADelta: 0,
+    });
+    const state = { ...base, relationships: warmRelationship.store, roster: [zeke] };
+    const final = run(state, 1).finalState;
+
+    expect(final.colonist.currentGoal?.source).toBe("voluntary");
+    expect(final.colonist.currentGoal?.relatedColonistId).toBe("zeke");
+    expect(["conversation", "sharedDowntime"]).toContain(final.execution?.taskId);
+  });
+
+  it("conversation restores Social need while executing", () => {
+    const initial = socialExecutionState("conversation");
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.social.level).toBeGreaterThan(initial.colonist.needs.social.level);
+  });
+
+  it("conversation materializes the relationship pair and applies a positive directional delta", () => {
+    const final = run(socialExecutionState("conversation"), 20).finalState;
+
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeGreaterThan(0);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBeLessThanOrEqual(0);
+  });
+
+  it("does not apply atrophy to a pair created by the current tick's interaction", () => {
+    const final = run(socialExecutionState("conversation"), 1).finalState;
+
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBe(TASK_TUNING.conversationAffinityDeltaPerTick);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBe(0);
+  });
+
+  it("does not apply atrophy to the active companionship pair on later ticks", () => {
+    const final = run(socialExecutionState("conversation"), 2).finalState;
+
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBe(TASK_TUNING.conversationAffinityDeltaPerTick * 2);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBe(0);
+  });
+
+  it("sharedDowntime applies positive relationship drift no stronger than conversation", () => {
+    const conversation = run(socialExecutionState("conversation"), 20).finalState;
+    const sharedDowntime = run(socialExecutionState("sharedDowntime"), 20).finalState;
+
+    const conversationAffinity = perspective(conversation.relationships, "c1", "zeke").affinity;
+    const sharedDowntimeAffinity = perspective(sharedDowntime.relationships, "c1", "zeke").affinity;
+    expect(sharedDowntimeAffinity).toBeGreaterThan(0);
+    expect(sharedDowntimeAffinity).toBeLessThanOrEqual(conversationAffinity);
+  });
+
+  it("sharedDowntime restores Social need, at a lower rate than conversation", () => {
+    const initialConversation = socialExecutionState("conversation");
+    const initialSharedDowntime = socialExecutionState("sharedDowntime");
+    const conversation = run(initialConversation, 20).finalState;
+    const sharedDowntime = run(initialSharedDowntime, 20).finalState;
+
+    expect(sharedDowntime.colonist.needs.social.level).toBeGreaterThan(initialSharedDowntime.colonist.needs.social.level);
+    expect(sharedDowntime.colonist.needs.social.level).toBeLessThan(conversation.colonist.needs.social.level);
+  });
+
+  it("social actions do not credit Purpose", () => {
+    const initial = socialExecutionState("conversation");
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.purpose.level).toBeLessThanOrEqual(initial.colonist.needs.purpose.level);
+  });
+
+  it("social execution remains replay-deterministic", () => {
+    const initial = socialExecutionState("conversation");
+    const final = run(initial, 50).finalState;
+
+    expect(verifyReplay(initial, final).kind).toBe("match");
+  });
+
+  it("save/load round-trip preserves companionship needs, relationships, and records", () => {
+    const final = run(socialExecutionState("conversation"), 50).finalState;
+    const reloaded = deserialize(serialize(final));
+
+    expect(reloaded.colonist.needs.social).toEqual(final.colonist.needs.social);
+    expect(reloaded.relationships).toEqual(final.relationships);
+    expect(reloaded.eventLog).toEqual(final.eventLog);
+    expect(reloaded.decisionLog).toEqual(final.decisionLog);
+  });
+
+  it("a companionship task without relatedColonistId fails safely with no social consequence", () => {
+    const initial = socialExecutionState("conversation", null);
+    const final = run(initial, 20).finalState;
+
+    expect(final.relationships).toEqual(createRelationshipStore());
+    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+  });
+
+  it("rejects a social execution target that is not in the roster", () => {
+    const state = socialExecutionState("conversation", "ghost");
+
+    expect(() => validateSimulationState(state)).toThrow(/not present in the roster/);
+    expect(() => tick(state, 1)).toThrow(/not present in the roster/);
+  });
+
+  it("rejects a social execution target that points at the primary colonist", () => {
+    const state = socialExecutionState("conversation", "c1");
+
+    expect(() => validateSimulationState(state)).toThrow(/must not target the primary colonist/);
+    expect(() => tick(state, 1)).toThrow(/must not target the primary colonist/);
   });
 });
 

@@ -334,7 +334,7 @@ export function applyInteraction(store: RelationshipStore, fact: InteractionFact
  * no eligible pairs or `elapsedDuration` is not positive. Pure, atomic per pair record, clamped,
  * no PRNG.
  */
-export function applyAtrophy(store: RelationshipStore, elapsedDuration: number): RelationshipWriteResult {
+export function applyAtrophy(store: RelationshipStore, elapsedDuration: number, excludedPair?: PairKey): RelationshipWriteResult {
   if (elapsedDuration <= 0) return { store, consequences: [] };
 
   const delta = RELATIONSHIP_TUNING.atrophyPerTick * elapsedDuration;
@@ -345,6 +345,7 @@ export function applyAtrophy(store: RelationshipStore, elapsedDuration: number):
   for (const min of minIds) {
     const maxIds = Object.keys(store.pairs[min]!).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     for (const max of maxIds) {
+      if (excludedPair !== undefined && excludedPair[0] === min && excludedPair[1] === max) continue;
       const record = store.pairs[min]![max]!;
       if (record.lastInteractionTick === null) continue; // D4: never-interacted pairs are not eligible
 

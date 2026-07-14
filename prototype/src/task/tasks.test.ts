@@ -7,11 +7,12 @@ import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional, consumeFood } from "../world/world.js";
 import { buildSnapshot, type WorldSnapshot } from "../world/snapshot.js";
 import { commitGoal, type Goal, type GoalCandidate } from "../decision/goals.js";
-import { checkAvailability, checkEligibility, resolveTask, taskDefinition } from "./tasks.js";
+import { checkAvailability, checkEligibility, isTaskComplete, resolveTask, taskDefinition } from "./tasks.js";
 
 const policy = createDefaultPolicy();
 const world = createWorld();
 const workSnapshot: WorldSnapshot = buildSnapshot(advance(createClock(), 0), policy, world);
+const freeSnapshot: WorldSnapshot = buildSnapshot(advance(createClock(), policy.workTicks + policy.restTicks), policy, world);
 
 function goalFor(candidate: GoalCandidate): Goal {
   return commitGoal(candidate, "test", 0);
@@ -21,6 +22,22 @@ const assignmentGoal = goalFor({ source: "shiftAssignment", tier: 3, key: "shift
 const hungerGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:hunger", baseUrgency: 0.4, relatedNeed: "hunger" });
 const restGoal = goalFor({ source: "criticalNeed", tier: 2, key: "criticalNeed:rest", baseUrgency: 0.9, relatedNeed: "rest" });
 const voluntaryGoal = goalFor({ source: "voluntary", tier: 5, key: "voluntary:idle", baseUrgency: 0.2 });
+const socialVoluntaryGoal = goalFor({
+  source: "voluntary",
+  tier: 5,
+  key: "voluntary:social:zeke",
+  baseUrgency: 0.2,
+  relatedColonistId: "zeke",
+  relatedSocialTaskId: "conversation",
+});
+const sharedDowntimeVoluntaryGoal = goalFor({
+  source: "voluntary",
+  tier: 5,
+  key: "voluntary:social:sharedDowntime:zeke",
+  baseUrgency: 0.2,
+  relatedColonistId: "zeke",
+  relatedSocialTaskId: "sharedDowntime",
+});
 const safetyGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:safety", baseUrgency: 0.3, relatedNeed: "safety" });
 const socialGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:social", baseUrgency: 0.3, relatedNeed: "social" });
 const purposeGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:purpose", baseUrgency: 0.3, relatedNeed: "purpose" });
@@ -134,6 +151,61 @@ describe("availability — read only through WorldSnapshot", () => {
     const task = taskDefinition("idlePresence");
     const brokenWorld = setModuleFunctional(world, "workstation", false);
     expect(checkAvailability(task, buildSnapshot(createClock(), policy, brokenWorld)).available).toBe(true);
+  });
+});
+
+describe("ADR-18 social task vocabulary (Build Step 1 — data only, not yet wired)", () => {
+  const socialTaskIds = ["conversation", "sharedDowntime", "sharedMeal", "comfort", "assist", "confrontation"] as const;
+
+  it("all six ADR-18 social action task kinds exist and resolve to a definition", () => {
+    for (const id of socialTaskIds) {
+      const task = taskDefinition(id);
+      expect(task.id).toBe(id);
+    }
+  });
+
+  it("the six social task ids are distinct from each other and from the Stage 1 task ids", () => {
+    const allIds = [...socialTaskIds, "workAtWorkstation", "eatAtFoodStation", "restAtBunk", "idlePresence"];
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+
+  it("all six social tasks belong to the social task class", () => {
+    for (const id of socialTaskIds) {
+      expect(taskDefinition(id).taskClass).toBe("social");
+    }
+  });
+
+  it("solo voluntary still resolves to idlePresence", () => {
+    const r = resolveTask(voluntaryGoal, [], workSnapshot);
+    expect(r.kind).toBe("executable");
+    if (r.kind === "executable") expect(r.task.id).toBe("idlePresence");
+  });
+
+  it("social voluntary resolves to the first reachable sought social action, not idlePresence", () => {
+    const r = resolveTask(socialVoluntaryGoal, [], workSnapshot);
+    expect(r.kind).toBe("executable");
+    if (r.kind === "executable") {
+      expect(r.task.id).toBe("conversation");
+      expect(r.task.id).not.toBe("confrontation");
+    }
+  });
+
+  it("shared-downtime social voluntary resolves to sharedDowntime, not conversation", () => {
+    const r = resolveTask(sharedDowntimeVoluntaryGoal, [], workSnapshot);
+    expect(r.kind).toBe("executable");
+    if (r.kind === "executable") expect(r.task.id).toBe("sharedDowntime");
+  });
+
+  it("social need goals still find no serving task — social vocabulary exists but is not wired to any candidate source", () => {
+    const r = resolveTask(socialGoal, [], workSnapshot);
+    expect(r.kind).toBe("blocked");
+  });
+
+  it("reachable companionship tasks complete when free time ends", () => {
+    expect(isTaskComplete("conversation", () => false, freeSnapshot)).toBe(false);
+    expect(isTaskComplete("sharedDowntime", () => false, freeSnapshot)).toBe(false);
+    expect(isTaskComplete("conversation", () => false, workSnapshot)).toBe(true);
+    expect(isTaskComplete("sharedDowntime", () => false, workSnapshot)).toBe(true);
   });
 });
 
