@@ -21,6 +21,13 @@ const assignmentGoal = goalFor({ source: "shiftAssignment", tier: 3, key: "shift
 const hungerGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:hunger", baseUrgency: 0.4, relatedNeed: "hunger" });
 const restGoal = goalFor({ source: "criticalNeed", tier: 2, key: "criticalNeed:rest", baseUrgency: 0.9, relatedNeed: "rest" });
 const voluntaryGoal = goalFor({ source: "voluntary", tier: 5, key: "voluntary:idle", baseUrgency: 0.2 });
+const socialVoluntaryGoal = goalFor({
+  source: "voluntary",
+  tier: 5,
+  key: "voluntary:social:zeke",
+  baseUrgency: 0.2,
+  relatedColonistId: "zeke",
+});
 const safetyGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:safety", baseUrgency: 0.3, relatedNeed: "safety" });
 const socialGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:social", baseUrgency: 0.3, relatedNeed: "social" });
 const purposeGoal = goalFor({ source: "lowNeed", tier: 4, key: "lowNeed:purpose", baseUrgency: 0.3, relatedNeed: "purpose" });
@@ -158,10 +165,16 @@ describe("ADR-18 social task vocabulary (Build Step 1 — data only, not yet wir
     }
   });
 
-  it("voluntary still resolves only to idlePresence — social tasks are not yet candidates for any goal source", () => {
+  it("solo voluntary still resolves to idlePresence", () => {
     const r = resolveTask(voluntaryGoal, [], workSnapshot);
     expect(r.kind).toBe("executable");
     if (r.kind === "executable") expect(r.task.id).toBe("idlePresence");
+  });
+
+  it("social voluntary resolves to the first reachable sought social action, not idlePresence", () => {
+    const r = resolveTask(socialVoluntaryGoal, [], workSnapshot);
+    expect(r.kind).toBe("executable");
+    if (r.kind === "executable") expect(r.task.id).toBe("conversation");
   });
 
   it("social need goals still find no serving task — social vocabulary exists but is not wired to any candidate source", () => {

@@ -83,7 +83,7 @@ function partitionByActionability(
   const actionable: GoalCandidate[] = [];
   const blocked: BlockedCandidateRecord[] = [];
   for (const candidate of candidatesInTier) {
-    const result = candidateActionability(candidate.source, candidate.relatedNeed, skills, snapshot);
+    const result = candidateActionability(candidate.source, candidate.relatedNeed, candidate.relatedColonistId, skills, snapshot);
     if (result.found) {
       actionable.push(candidate);
     } else {

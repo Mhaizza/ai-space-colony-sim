@@ -19,9 +19,9 @@ export type TaskId = "workAtWorkstation" | "eatAtFoodStation" | "restAtBunk" | "
 
 /**
  * ADR-18 D1's six canonical social actions — the closed social task-class vocabulary. Data
- * only for this build step: none of these are reachable yet (candidateTaskIdsFor below still
- * has no social-source branch), so they exist as vocabulary a colonist can be assigned but
- * nothing yet assigns. Shared Meal is listed as its own id here for vocabulary-closure purposes;
+ * Conversation and Shared Downtime are reachable for voluntary goals with a partner; the
+ * condition-gated actions stay vocabulary-only until their own wiring. Shared Meal is listed
+ * as its own id here for vocabulary-closure purposes;
  * ADR-18 D3 frames it architecturally as an overlay on eatAtFoodStation (the colonist adopts
  * "eat", social crediting activates from context) — the wiring step must honor that, not treat
  * this id as a second independently-adopted eating goal.
@@ -42,8 +42,7 @@ const TASKS: Readonly<Record<TaskId, TaskDefinition>> = {
   eatAtFoodStation: { id: "eatAtFoodStation", taskClass: "satisfaction", moduleId: "foodStation" },
   restAtBunk: { id: "restAtBunk", taskClass: "satisfaction", moduleId: "restBunk" },
   idlePresence: { id: "idlePresence", taskClass: "transitIdle", moduleId: null },
-  // ADR-18 D1 social task class — data only, unreachable until the wiring build step (see
-  // SocialTaskId doc comment above). moduleId null: these occur wherever the partner is, not
+  // ADR-18 D1 social task class. moduleId null: these occur wherever the partner is, not
   // at a fixed station (Shared Meal is the one exception, tied to foodStation per its overlay).
   conversation: { id: "conversation", taskClass: "social", moduleId: null },
   sharedDowntime: { id: "sharedDowntime", taskClass: "social", moduleId: null },
@@ -62,15 +61,19 @@ export function taskDefinition(id: TaskId): TaskDefinition {
  * The candidate task ids that could serve a goal, by source (and, for need-driven sources,
  * by which need). Closed and structural for Stage 1: Safety, Social, and Purpose have no
  * serving task here — Safety and Purpose are satisfied by conditions, not an action (ADR-17
- * D9); Social's action vocabulary is entirely ADR-18, not built yet. A lowNeed goal for any
- * of those three correctly finds no task and resolves to blocked — this is the architecturally
- * expected "Social is unsatisfiable at 1 colonist" shape, not a gap to paper over.
+ * D9); deliberate social actions enter as voluntary partner goals. A lowNeed goal for any of
+ * those three correctly finds no task and resolves to blocked.
  */
-function candidateTaskIdsFor(source: GoalSource, relatedNeed: NeedId | undefined): readonly TaskId[] {
+function candidateTaskIdsFor(
+  source: GoalSource,
+  relatedNeed: NeedId | undefined,
+  relatedColonistId: string | undefined,
+): readonly TaskId[] {
   switch (source) {
     case "shiftAssignment":
       return ["workAtWorkstation"];
     case "voluntary":
+      if (relatedColonistId !== undefined) return ["conversation", "sharedDowntime"];
       return ["idlePresence"];
     case "criticalNeed":
     case "lowNeed":
@@ -145,10 +148,11 @@ type TaskSearchResult =
 function findServingTask(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
+  relatedColonistId: string | undefined,
   skills: readonly string[],
   snapshot: WorldSnapshot,
 ): TaskSearchResult {
-  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed)].sort(); // stable order (EQ-2)
+  const candidateIds = [...candidateTaskIdsFor(source, relatedNeed, relatedColonistId)].sort(); // stable order (EQ-2)
   if (candidateIds.length === 0) {
     return {
       found: false,
@@ -187,7 +191,7 @@ export function resolveTask(goal: Goal, skills: readonly string[], snapshot: Wor
     throw new Error(`resolveTask requires an active goal, got status "${goal.status}"`);
   }
 
-  const result = findServingTask(goal.source, goal.relatedNeed, skills, snapshot);
+  const result = findServingTask(goal.source, goal.relatedNeed, goal.relatedColonistId, skills, snapshot);
   if (result.found) {
     return { kind: "executable", task: result.task, goal };
   }
@@ -205,10 +209,11 @@ export function resolveTask(goal: Goal, skills: readonly string[], snapshot: Wor
 export function candidateActionability(
   source: GoalSource,
   relatedNeed: NeedId | undefined,
+  relatedColonistId: string | undefined,
   skills: readonly string[],
   snapshot: WorldSnapshot,
 ): TaskSearchResult {
-  return findServingTask(source, relatedNeed, skills, snapshot);
+  return findServingTask(source, relatedNeed, relatedColonistId, skills, snapshot);
 }
 
 /**
