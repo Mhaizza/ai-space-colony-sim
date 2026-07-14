@@ -31,13 +31,20 @@ import type { ColonistIdentity, ColonistState } from "../colonist/colonist.js";
 import { withCurrentGoal, withMemory, withNeeds, withStress, withSuspendedGoal } from "../colonist/colonist.js";
 import { decayNeeds, isCritical, isLow, isSatisfied, restoreNeedByAmount } from "../colonist/needs.js";
 import { considerConditionFormation, considerDeprivationFormation, considerRelationalFormation } from "../colonist/memory.js";
-import { applyAtrophy, applyInteraction, assertSafeColonistId, type RelationshipConsequence, type RelationshipStore } from "../colonist/relationships.js";
+import {
+  applyAtrophy,
+  applyInteraction,
+  assertSafeColonistId,
+  canonicalPairId,
+  type RelationshipConsequence,
+  type RelationshipStore,
+} from "../colonist/relationships.js";
 import { evaluateStress, type StressContribution } from "../colonist/stress.js";
 import type { TraitId } from "../colonist/traits.js";
 import type { ShiftPeriod, ShiftPolicy } from "../world/policy.js";
 import { periodAt } from "../world/policy.js";
 import type { WorldState } from "../world/world.js";
-import { buildSnapshot, type WorldSnapshot } from "../world/snapshot.js";
+import { buildSnapshot, type ObservableColonist, type WorldSnapshot } from "../world/snapshot.js";
 import {
   abandonGoal,
   completeGoal,
@@ -325,6 +332,10 @@ function companionshipAffinityDeltaPerTick(taskId: TaskId): number {
   }
 }
 
+function rosterObservations(roster: readonly ColonistIdentity[]): readonly ObservableColonist[] {
+  return roster.map((identity) => ({ id: identity.id, ambientState: "resting" }));
+}
+
 function detectNeedThresholdCrossings(
   before: ColonistState["needs"],
   after: ColonistState["needs"],
@@ -490,7 +501,12 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   let relationships = state.relationships;
   const relationshipConsequences: RelationshipConsequence[] = [];
 
-  const atrophyResult = applyAtrophy(relationships, deltaTicks);
+  const activeSocialPartner = execution?.status === "inProgress" ? colonist.currentGoal?.relatedColonistId : undefined;
+  const activeSocialPair =
+    activeSocialPartner !== undefined && companionshipAffinityDeltaPerTick(execution!.taskId) > 0
+      ? canonicalPairId(colonist.identity.id, activeSocialPartner)
+      : undefined;
+  const atrophyResult = applyAtrophy(relationships, deltaTicks, activeSocialPair);
   relationships = atrophyResult.store;
   relationshipConsequences.push(...atrophyResult.consequences);
 
@@ -611,7 +627,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   }
 
   // --- Phase: condition & trigger detection (the one snapshot this tick reads through) ---
-  const snapshot = buildSnapshot(clock, state.policy, world);
+  const snapshot = buildSnapshot(clock, state.policy, world, rosterObservations(state.roster));
 
   let triggered = events.some((e) => e.kind === "needThresholdCrossing" || e.kind === "shiftBoundary" || e.kind === "bootstrap");
 
