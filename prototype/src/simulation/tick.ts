@@ -57,6 +57,19 @@ import {
 import { decideFromCandidates, type DecisionOutcome } from "../decision/decide.js";
 import { isTaskComplete, resolveTask, type TaskId, type TaskResolution } from "../task/tasks.js";
 import {
+  createPendingOffer,
+  evictResolvedOffers,
+  isInterruptibleAmbientState,
+  offerGoalKey,
+  resolveOffer,
+  type OfferResolutionReason,
+  type SocialOfferAction,
+  type SocialOfferStatus,
+  type SocialOfferStore,
+} from "../task/socialOffers.js";
+import { SOCIAL_OFFER_TUNING } from "../config/tuning.js";
+import { next } from "../core/prng.js";
+import {
   abortExecution,
   applyProgressConsequences,
   beginExecution,
@@ -144,6 +157,15 @@ export interface SimulationState {
    * (nearbyColonists/candidate generation remain their own, separately-approved concern).
    */
   readonly roster: readonly ColonistIdentity[];
+  /**
+   * Stage 2 Slice 5 — M12's social offer store (ADR-21 D1): the ADR-18 D5 offer/response
+   * protocol's persisted state for Conversation and Shared Downtime. Offers are created at
+   * social goal commitment (design D3, Phase 5) and resolved by the Phase 6 lifecycle pass
+   * below — never on their creating tick (the one-tick response-delay floor). Resolved offers
+   * are never a decision input (ADR-21 Invariant 8): the lifecycle pass reads pending offers
+   * only, and everything else that touches this slice is serialization/replay/inspection.
+   */
+  readonly socialOffers: SocialOfferStore;
 }
 
 /** One tick's trace — the "stable replay log": what was detected, decided, resolved, executed. */
@@ -169,7 +191,22 @@ export type TickEvent =
       readonly needId?: NeedId;
       readonly otherId?: string;
     }
-  | { readonly kind: "stressEvaluated"; readonly contributions: readonly StressContribution[] };
+  | { readonly kind: "stressEvaluated"; readonly contributions: readonly StressContribution[] }
+  | {
+      readonly kind: "socialOfferCreated";
+      readonly offerId: number;
+      readonly initiatorId: string;
+      readonly responderId: string;
+      readonly action: SocialOfferAction;
+      readonly respondableAtTick: number;
+      readonly expiresAtTick: number;
+    }
+  | {
+      readonly kind: "socialOfferResolved";
+      readonly offerId: number;
+      readonly status: Exclude<SocialOfferStatus, "pending">;
+      readonly reason: OfferResolutionReason | null;
+    };
 
 export interface TickResult {
   readonly state: SimulationState;
@@ -225,11 +262,24 @@ export function validateSimulationState(state: SimulationState): void {
   }
 
   if ((suspendedGoal === null) !== (suspendedExecution === null)) {
-    throw new Error(
-      "Invalid SimulationState: suspendedGoal and suspendedExecution must both be null or both be " +
-        `present — got suspendedGoal=${suspendedGoal === null ? "null" : `"${suspendedGoal.key}"`}, ` +
-        `suspendedExecution=${suspendedExecution === null ? "null" : `"${suspendedExecution.taskId}"`}.`,
-    );
+    // Stage 2 Slice 5 exception (design D3 step 3's hold): a suspended OFFER-BACKED goal has
+    // no execution to park — its execution never began (it begins only on acceptance) — so
+    // suspendedGoal non-null with suspendedExecution null is exactly the shape a survivable
+    // interruption during the response-delay window produces. Recognized strictly: the goal
+    // must be matched by a pending offer's derived goal key; any other one-sided pair is
+    // still the malformed state this check has always rejected.
+    const offerBackedSuspension =
+      suspendedGoal !== null &&
+      suspendedExecution === null &&
+      state.socialOffers.offers.some((o) => o.status === "pending" && offerGoalKey(o) === suspendedGoal.key);
+    if (!offerBackedSuspension) {
+      throw new Error(
+        "Invalid SimulationState: suspendedGoal and suspendedExecution must both be null or both be " +
+          `present — got suspendedGoal=${suspendedGoal === null ? "null" : `"${suspendedGoal.key}"`}, ` +
+          `suspendedExecution=${suspendedExecution === null ? "null" : `"${suspendedExecution.taskId}"`} ` +
+          `(the only sanctioned exception is a suspended offer-backed social goal with a matching pending offer).`,
+      );
+    }
   }
 
   if (suspendedGoal !== null && suspendedExecution !== null) {
@@ -608,6 +658,119 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // correctly never fires at all, and this still becomes permanently true from tick one).
   const hasBootstrapped = true;
 
+  // --- Phase: condition & trigger detection input (the one snapshot this tick reads through).
+  // Built here — after execution consequences have settled the world — so both the social
+  // offer lifecycle pass below and the trigger/decision phases read the same fixed view.
+  const snapshot = buildSnapshot(clock, state.policy, world, rosterObservations(state.roster));
+
+  // --- Phase: social offer lifecycle (Stage 2 Slice 5 — design D3's Phase 6 steps, ADR-21).
+  // Every pending offer is examined in ascending id order: expiry → cancellation → hold →
+  // response delay → eligibility → acceptance draw. Runs before memory formation so a
+  // decline's forcedProximityMutualStress consequence feeds the same M9 pass as every other
+  // interaction this tick. Reads pending offers only (ADR-21 Invariant 8).
+  let socialOffers = state.socialOffers;
+  let prng = state.prng;
+  for (const offer of state.socialOffers.offers) {
+    if (offer.status !== "pending") continue;
+    const goalKey = offerGoalKey(offer);
+    const resolved = (status: Exclude<SocialOfferStatus, "pending">, reason: OfferResolutionReason | null): void => {
+      socialOffers = resolveOffer(socialOffers, offer.id, status, clock.tick, reason);
+      events.push({ kind: "socialOfferResolved", offerId: offer.id, status, reason });
+    };
+    const abandonInitiatorGoal = (): void => {
+      if (colonist.currentGoal?.key === goalKey) {
+        abandonGoal(colonist.currentGoal); // legality check — active/blocked → abandoned
+        colonist = withCurrentGoal(colonist, null);
+      } else if (colonist.suspendedGoal?.key === goalKey) {
+        abandonGoal(colonist.suspendedGoal);
+        colonist = withSuspendedGoal(colonist, null); // offer-backed suspension has no parked execution
+      }
+    };
+    const declineWithFriction = (reason: OfferResolutionReason): void => {
+      resolved("declined", reason);
+      // ADR-18 D6's decline row: forced-proximity friction, negative, low, both directions.
+      const interaction = applyInteraction(relationships, {
+        colonistAId: offer.initiatorId,
+        colonistBId: offer.responderId,
+        tick: clock.tick,
+        changeSource: "forcedProximityMutualStress",
+        initiatorId: offer.initiatorId,
+        responderId: offer.responderId,
+        aTowardBDelta: SOCIAL_OFFER_TUNING.declineAffinityDelta,
+        bTowardADelta: SOCIAL_OFFER_TUNING.declineAffinityDelta,
+      });
+      relationships = interaction.store;
+      relationshipConsequences.push(...interaction.consequences);
+      abandonInitiatorGoal();
+    };
+
+    // 1 — expiry (design D6: reachable when a suspension outlasts the timeout).
+    if (clock.tick >= offer.expiresAtTick) {
+      resolved("expired", "timeout");
+      abandonInitiatorGoal(); // a goal whose offer expired must not later resume into direct execution
+      continue;
+    }
+    // 2 — cancellation: the offer-creating goal was abandoned or replaced (design D6).
+    const initiatorHoldsGoal = colonist.currentGoal?.key === goalKey || colonist.suspendedGoal?.key === goalKey;
+    if (!initiatorHoldsGoal) {
+      resolved("cancelled", "initiatorUnavailable");
+      continue;
+    }
+    // 2b — double-booking guard (design D6): a lower-id pending offer for the same responder
+    // wins; the later-created one cancels. Unreachable with one initiator, specified anyway.
+    if (socialOffers.offers.some((o) => o.status === "pending" && o.responderId === offer.responderId && o.id < offer.id)) {
+      resolved("cancelled", "responderUnavailable");
+      abandonInitiatorGoal();
+      continue;
+    }
+    // 3 — hold: a suspended offer-creating goal keeps the offer pending (design D3 step 3).
+    if (colonist.suspendedGoal?.key === goalKey) continue;
+    // 4 — not yet respondable: the one-tick-minimum response delay (design D3).
+    if (clock.tick < offer.respondableAtTick) continue;
+    // 5 — responder eligibility (design D4: snapshot facts and directional perspectives only).
+    if (!state.roster.some((r) => r.id === offer.responderId)) {
+      // No friction: an absent responder is not a known colonist to hold a pair with.
+      resolved("declined", "responderNotInRoster");
+      abandonInitiatorGoal();
+      continue;
+    }
+    const observed = snapshot.nearbyColonists.find((c) => c.id === offer.responderId);
+    if (observed === undefined || !isInterruptibleAmbientState(observed.ambientState)) {
+      declineWithFriction("responderNotInterruptible");
+      continue;
+    }
+    const isNonHostile = (s: string) => s !== "hostile" && s !== "fractured";
+    if (
+      !isNonHostile(perspective(relationships, offer.initiatorId, offer.responderId).state) ||
+      !isNonHostile(perspective(relationships, offer.responderId, offer.initiatorId).state)
+    ) {
+      declineWithFriction("relationshipGate");
+      continue;
+    }
+    // 6 — acceptance draw (design D5): one attributed S1 draw, modulated by the RESPONDER's
+    // directional relationship state toward the initiator.
+    const responderState = perspective(relationships, offer.responderId, offer.initiatorId).state;
+    const acceptanceProbability = SOCIAL_OFFER_TUNING.acceptanceProbability[responderState] ?? 0;
+    const draw = next(prng);
+    prng = draw.state;
+    if (draw.value >= acceptanceProbability) {
+      declineWithFriction("acceptanceDraw");
+      continue;
+    }
+    resolved("accepted", null);
+    const acceptedGoal = colonist.currentGoal!; // step 3 ruled out suspension; step 2 ruled out absence
+    const resolution = resolveTask(acceptedGoal, colonist.identity.skills, snapshot);
+    events.push({ kind: "taskResolution", resolution });
+    if (resolution.kind === "executable") {
+      execution = beginExecution(resolution.task, acceptedGoal, clock.tick);
+      events.push({ kind: "executionBegun", taskId: execution.taskId, goalKey: execution.goalKey });
+    } else {
+      events.push({ kind: "blockage", goalKey: resolution.goal.key, reasons: resolution.reasons });
+      colonist = withCurrentGoal(colonist, resolution.goal);
+    }
+  }
+  socialOffers = evictResolvedOffers(socialOffers, SOCIAL_OFFER_TUNING.resolvedOfferRetention);
+
   // --- Phase: memory formation (M9) — involuntary, from cumulative need/stress movement since
   // each baseline (see SimulationState doc). A need at or above satisfaction, or that has
   // recovered past its own baseline, resets the baseline there (the dip is over); otherwise the
@@ -675,9 +838,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     events.push({ kind: "shiftBoundary", from: periodBefore, to: periodAfter });
   }
 
-  // --- Phase: condition & trigger detection (the one snapshot this tick reads through) ---
-  const snapshot = buildSnapshot(clock, state.policy, world, rosterObservations(state.roster));
-
+  // --- Phase: condition & trigger detection (reads the snapshot built above) ---
   let triggered = events.some((e) => e.kind === "needThresholdCrossing" || e.kind === "shiftBoundary" || e.kind === "bootstrap");
 
   // Completion: only checkable if there is an in-progress execution.
@@ -746,8 +907,8 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   if (!triggered) {
     return finish(
       {
-        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster,
+        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
+        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster, socialOffers,
       },
       events,
     );
@@ -767,21 +928,28 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   if (!resumeFromSuspension && !wasInterruption && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
     return finish(
       {
-        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng: state.prng,
-        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster,
+        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
+        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster, socialOffers,
       },
       events,
     );
   }
 
   // --- Phase: decision (only reached when re-decision is actually warranted) ---
-  let prng = state.prng;
 
   if (resumeFromSuspension && colonist.suspendedGoal !== null && suspendedExecution !== null) {
     const resumed = resumeSuspended(colonist, suspendedExecution, snapshot, events);
     colonist = resumed.colonist;
     execution = resumed.execution;
     suspendedExecution = null; // the pair is resolved either way (resumed, replaced, or blocked)
+  } else if (resumeFromSuspension && colonist.suspendedGoal !== null) {
+    // Offer-backed suspended goal (Stage 2 Slice 5): no execution was ever parked — the goal
+    // resumes to the active slot with no execution, and its still-pending offer picks back up
+    // at the next tick's lifecycle pass (design D3 step 3's hold ending). Nothing to resolve
+    // or begin here: execution begins only on acceptance.
+    const resumedGoal = resumeGoal(colonist.suspendedGoal);
+    colonist = withCurrentGoal(withSuspendedGoal(colonist, null), resumedGoal);
+    execution = null;
   } else {
     if (wasInterruption && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
       const suspended = suspendCurrentGoal(colonist, execution, suspendedExecution, events);
@@ -801,7 +969,43 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     }
     prng = decision.prngState;
 
-    if (decision.kind === "commit") {
+    if (
+      decision.kind === "commit" &&
+      decision.goal.relatedColonistId !== undefined &&
+      (decision.goal.relatedSocialTaskId === "conversation" || decision.goal.relatedSocialTaskId === "sharedDowntime")
+    ) {
+      // Stage 2 Slice 5 (design D3, Phase 5): committing a Conversation/Shared Downtime goal
+      // creates a pending offer instead of beginning execution — the responder answers in a
+      // later tick's lifecycle pass (never this tick: the one-tick response-delay floor).
+      // Re-committing an identical intent while its offer is still pending reuses that offer.
+      const goal = decision.goal;
+      const responderId = decision.goal.relatedColonistId;
+      const action = decision.goal.relatedSocialTaskId;
+      const existing = socialOffers.offers.find((o) => o.status === "pending" && offerGoalKey(o) === goal.key);
+      if (existing === undefined) {
+        const created = createPendingOffer({
+          store: socialOffers,
+          initiatorId: colonist.identity.id,
+          responderId,
+          action,
+          createdAtTick: clock.tick,
+          responseDelayTicks: SOCIAL_OFFER_TUNING.responseDelayTicks,
+          offerTimeoutTicks: SOCIAL_OFFER_TUNING.offerTimeoutTicks,
+        });
+        socialOffers = created.store;
+        events.push({
+          kind: "socialOfferCreated",
+          offerId: created.offer.id,
+          initiatorId: created.offer.initiatorId,
+          responderId: created.offer.responderId,
+          action: created.offer.action,
+          respondableAtTick: created.offer.respondableAtTick,
+          expiresAtTick: created.offer.expiresAtTick,
+        });
+      }
+      colonist = withCurrentGoal(colonist, goal);
+      execution = null;
+    } else if (decision.kind === "commit") {
       const adopted = adoptAndResolve(colonist, decision.goal, snapshot, clock.tick, events);
       colonist = adopted.colonist;
       execution = adopted.execution;
@@ -814,7 +1018,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   return finish(
     {
       clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-      deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster,
+      deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster, socialOffers,
     },
     events,
   );

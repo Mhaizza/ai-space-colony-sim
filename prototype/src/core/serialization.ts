@@ -25,6 +25,7 @@ import type { StressChannelId, StressContribution, StressState } from "../coloni
 import type { TraitId } from "../colonist/traits.js";
 import type { WeightTiltContribution } from "../colonist/traits.js";
 import { deserializeRelationshipStore, serializeRelationshipStore } from "../colonist/relationships.js";
+import { validateSocialOfferStore } from "../task/socialOffers.js";
 import type { Goal, GoalStatus } from "../decision/goals.js";
 import { type AttributedDraw, type BlockedCandidateRecord, type DecisionOutcome } from "../decision/decide.js";
 import type {
@@ -40,7 +41,7 @@ import type { DecisionLog, DecisionRecord, EventLog, EventRecord } from "../reco
 import { validateSimulationState, type SimulationState, type TickEvent } from "../simulation/tick.js";
 
 /** The current save format version — bump on any incompatible SimulationState shape change. */
-export const SAVE_FORMAT_VERSION = 3; // v3: adds the Stage 2 Slice 2 multi-colonist roster.
+export const SAVE_FORMAT_VERSION = 4; // v4: adds the Stage 2 Slice 5 social offer store (ADR-21 D5).
 
 const GOAL_STATUSES: readonly GoalStatus[] = ["active", "suspended", "blocked", "completed", "abandoned"];
 const EXECUTION_STATUSES: readonly ExecutionStatus[] = ["inProgress", "interrupted", "completed", "aborted"];
@@ -566,6 +567,38 @@ function readTickEvent(raw: unknown, field: string): TickEvent {
         needId: o.needId === undefined ? undefined : expectOneOf(o.needId, NEEDS, `${field}.needId`),
         otherId: o.otherId === undefined ? undefined : expectString(o.otherId, `${field}.otherId`),
       };
+    case "socialOfferCreated":
+      return {
+        kind: "socialOfferCreated",
+        offerId: expectNonNegativeInteger(o.offerId, `${field}.offerId`),
+        initiatorId: expectString(o.initiatorId, `${field}.initiatorId`),
+        responderId: expectString(o.responderId, `${field}.responderId`),
+        action: expectOneOf(o.action, ["conversation", "sharedDowntime"] as const, `${field}.action`),
+        respondableAtTick: expectNonNegativeInteger(o.respondableAtTick, `${field}.respondableAtTick`),
+        expiresAtTick: expectNonNegativeInteger(o.expiresAtTick, `${field}.expiresAtTick`),
+      };
+    case "socialOfferResolved":
+      return {
+        kind: "socialOfferResolved",
+        offerId: expectNonNegativeInteger(o.offerId, `${field}.offerId`),
+        status: expectOneOf(o.status, ["accepted", "declined", "cancelled", "expired"] as const, `${field}.status`),
+        reason:
+          o.reason === null
+            ? null
+            : expectOneOf(
+                o.reason,
+                [
+                  "responderNotInRoster",
+                  "responderNotInterruptible",
+                  "relationshipGate",
+                  "acceptanceDraw",
+                  "initiatorUnavailable",
+                  "responderUnavailable",
+                  "timeout",
+                ] as const,
+                `${field}.reason`,
+              ),
+      };
     case "stressEvaluated":
       return {
         kind: "stressEvaluated",
@@ -644,6 +677,7 @@ export function serialize(state: SimulationState): string {
     decisionLog: state.decisionLog,
     relationships: serializeRelationshipStore(state.relationships),
     roster: state.roster,
+    socialOffers: state.socialOffers, // already JSON-safe; validated (never repaired) on load by socialOffers.ts (ADR-21 D5)
   });
 }
 
@@ -693,6 +727,9 @@ export function deserialize(json: string): SimulationState {
     decisionLog: readDecisionLog(o.decisionLog),
     relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick, colonist.identity.id),
     roster,
+    // ADR-21 D5: the social offer slice validates against the same known-colonist set and
+    // loaded clock as relationships — socialOffers.ts owns its own rules, this module calls in.
+    socialOffers: validateSocialOfferStore(o.socialOffers, knownColonistIds, clock.tick),
   };
 
   validateSimulationState(state);
