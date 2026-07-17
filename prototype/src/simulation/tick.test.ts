@@ -11,7 +11,7 @@ import { createPrng } from "../core/prng.js";
 import { deserialize, serialize } from "../core/serialization.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional } from "../world/world.js";
-import { TASK_TUNING } from "../config/tuning.js";
+import { SOCIAL_OFFER_TUNING, TASK_TUNING } from "../config/tuning.js";
 import { createColonist, withCurrentGoal, withNeeds, withSuspendedGoal } from "../colonist/colonist.js";
 import { createNeeds } from "../colonist/needs.js";
 import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState } from "./tick.js";
@@ -538,6 +538,87 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
     expect(offer.reason).toBe("timeout");
     expect(result.state.colonist.suspendedGoal).toBeNull(); // the goal must not later resume into direct execution
     expect(result.state.relationships.pairs).toEqual({}); // expiry applies no relationship effect
+  });
+
+  it("identical seed and state reproduce the same offer-response sequence (Issue #120 determinism criterion)", () => {
+    const a = run(pendingOfferState(7), 30).finalState;
+    const b = run(pendingOfferState(7), 30).finalState;
+    expect(b.socialOffers).toEqual(a.socialOffers);
+    expect(b.prng).toEqual(a.prng);
+    // A different seed may legitimately resolve differently — the sequence is seed-determined,
+    // not hard-coded: seed 1's first draw declines where seed 7's accepts (see tests above).
+    const c = run(pendingOfferState(1), 30).finalState;
+    expect(c.socialOffers.offers[0]!.status).toBe("declined");
+    expect(a.socialOffers.offers[0]!.status).toBe("accepted");
+  });
+
+  it("resolved-offer retention never evicts pending offers (ADR-21 D4)", () => {
+    // Flood the store with more resolved offers than the retention window, plus one pending.
+    const resolved: SocialOffer[] = Array.from({ length: SOCIAL_OFFER_TUNING.resolvedOfferRetention + 5 }, (_, i) => ({
+      id: i,
+      initiatorId: "c1",
+      responderId: "zeke",
+      action: "conversation",
+      createdAtTick: 1,
+      respondableAtTick: 2,
+      expiresAtTick: 5,
+      status: "declined",
+      resolvedAtTick: 3,
+      reason: "acceptanceDraw",
+    }));
+    const base = pendingOfferState(7);
+    const pendingId = resolved.length;
+    const state: SimulationState = {
+      ...base,
+      socialOffers: {
+        offers: [...resolved, { ...base.socialOffers.offers[0]!, id: pendingId }],
+        nextOfferSequence: pendingId + 1,
+      },
+    };
+    const after = tick(state, 1).state;
+    // The pending offer resolved (accepted, seed 7) this tick but was never evicted while
+    // pending; eviction then trimmed the full RESOLVED population (the newly accepted offer
+    // included) to the retention window, oldest ids first.
+    expect(after.socialOffers.offers.some((o) => o.id === pendingId)).toBe(true);
+    expect(after.socialOffers.offers.length).toBe(SOCIAL_OFFER_TUNING.resolvedOfferRetention);
+    expect(after.socialOffers.offers[0]!.id).toBeGreaterThan(0); // oldest resolved ids evicted first
+    expect(after.socialOffers.nextOfferSequence).toBe(pendingId + 1); // eviction never rolls the counter back
+  });
+
+  it("accepted, declined, cancelled, and expired offers all survive save/load (terminal-state matrix)", () => {
+    const base = pendingOfferState(7);
+    const terminal: SocialOffer[] = (
+      [
+        ["accepted", null],
+        ["declined", "acceptanceDraw"],
+        ["cancelled", "initiatorUnavailable"],
+        ["expired", "timeout"],
+      ] as const
+    ).map(([status, reason], i) => ({
+      id: i,
+      initiatorId: "c1",
+      responderId: "zeke",
+      action: "conversation",
+      createdAtTick: 1,
+      respondableAtTick: 2,
+      expiresAtTick: 5,
+      status,
+      resolvedAtTick: 3,
+      reason,
+    }));
+    const state: SimulationState = { ...base, socialOffers: { offers: terminal, nextOfferSequence: terminal.length } };
+    const reloaded = deserialize(serialize(state));
+    expect(reloaded.socialOffers).toEqual(state.socialOffers);
+  });
+
+  it("full replay verification covers a run containing offer creation and resolution", () => {
+    // Organic end-to-end: bootstrap → social commit → offer → resolution, then verifyReplay
+    // proves the whole thing (traces AND terminal state, socialOffers included) reproduces.
+    const freeStartState = stateAtTickOfDay(freeStart, { social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, 31);
+    const initial = { ...freeStartState, roster: [zeke] };
+    const final = run(initial, 30).finalState;
+    expect(final.socialOffers.offers.length).toBeGreaterThan(0); // sanity: the run really exercised the protocol
+    expect(verifyReplay(initial, final).kind).toBe("match");
   });
 
   it("save/load round-trips a genuinely pending offer mid-delay without semantic change", () => {
