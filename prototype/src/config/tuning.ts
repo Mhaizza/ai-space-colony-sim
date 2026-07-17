@@ -143,6 +143,26 @@ export const TASK_TUNING = {
   sharedMealAffinityDeltaPerTick: 0.03,
 } as const;
 
+/** Social offer/response calibration (all provisional — design DQ-1–DQ-4, ADR-18 DQ-18.1/18.2). Structural floors (delay >= 1, timeout > delay) are enforced by socialOffers.ts at creation, not here. */
+export const SOCIAL_OFFER_TUNING = {
+  /** provisional — DQ-1: acceptance probability per responder relationship state (hostile/fractured never reach the draw — design D4's gate). */
+  acceptanceProbability: {
+    tense: 0.35,
+    acquainted: 0.55,
+    neutral: 0.6,
+    positive: 0.75,
+    bonded: 0.9,
+  } as Readonly<Record<string, number>>,
+  /** provisional — DQ-2: ticks between offer creation and earliest resolution (design D3; structural floor of 1 is architecture, this magnitude is pacing). */
+  responseDelayTicks: 1,
+  /** provisional — DQ-3: ticks from creation to expiry (design D6; must exceed responseDelayTicks). */
+  offerTimeoutTicks: 4,
+  /** provisional — DQ-4: bounded resolved-offer retention window (ADR-21 D4; pending offers are never evicted). */
+  resolvedOfferRetention: 16,
+  /** provisional — DQ-1: decline friction magnitude, applied per direction via the forcedProximityMutualStress change source (ADR-18 D6's decline row; negative, low). */
+  declineAffinityDelta: -0.5,
+} as const;
+
 /** Memory calibration (all provisional — DQ-M1). */
 export const MEMORY_TUNING = {
   /** provisional — DQ-M1: bounded pool size per colonist. */

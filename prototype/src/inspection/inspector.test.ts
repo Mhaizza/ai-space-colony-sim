@@ -366,3 +366,62 @@ describe("roster inspection (Stage 2 Slice 2)", () => {
     expect(base.roster[0]!.name).toBe("Zeke");
   });
 });
+
+describe("social offer inspection (Stage 2 Slice 5, ADR-21 D6)", () => {
+  const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
+
+  function stateWithOffers(): SimulationState {
+    const base = createInitialState(1, "c1", "Maya", [], [], [zeke]);
+    return {
+      ...base,
+      socialOffers: {
+        offers: [
+          {
+            id: 0,
+            initiatorId: "c1",
+            responderId: "zeke",
+            action: "conversation",
+            createdAtTick: 0,
+            respondableAtTick: 1,
+            expiresAtTick: 4,
+            status: "declined",
+            resolvedAtTick: 1,
+            reason: "acceptanceDraw",
+          },
+          {
+            id: 1,
+            initiatorId: "c1",
+            responderId: "zeke",
+            action: "sharedDowntime",
+            createdAtTick: 2,
+            respondableAtTick: 3,
+            expiresAtTick: 6,
+            status: "pending",
+            resolvedAtTick: null,
+            reason: null,
+          },
+        ],
+        nextOfferSequence: 2,
+      },
+    };
+  }
+
+  it("exposes every stored offer in ascending-id order with its full record", () => {
+    const summary = inspect(stateWithOffers());
+    expect(summary.socialOffers.map((o) => o.id)).toEqual([0, 1]);
+    expect(summary.socialOffers[0]!.status).toBe("declined");
+    expect(summary.socialOffers[0]!.reason).toBe("acceptanceDraw");
+    expect(summary.socialOffers[1]!.status).toBe("pending");
+  });
+
+  it("an empty store reads as an empty list", () => {
+    expect(inspect(createInitialState(1, "c1", "Maya")).socialOffers).toEqual([]);
+  });
+
+  it("detached: mutating the returned socialOffers never aliases back into the state", () => {
+    const state = stateWithOffers();
+    const summary = inspect(state);
+    (summary.socialOffers as unknown as { status: string }[])[1]!.status = "accepted";
+    expect(state.socialOffers.offers[1]!.status).toBe("pending");
+  });
+});

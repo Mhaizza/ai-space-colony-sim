@@ -22,6 +22,7 @@ import type { Goal } from "../decision/goals.js";
 import { ambientStateFor, type Execution } from "../task/execution.js";
 import { periodAt, type ShiftPeriod } from "../world/policy.js";
 import type { DecisionLog, EventLog } from "../records/logs.js";
+import type { SocialOffer } from "../task/socialOffers.js";
 import type { SimulationState } from "../simulation/tick.js";
 import type { ReplayResult } from "../replay/replay.js";
 
@@ -67,6 +68,13 @@ export interface InspectionSummary {
    * simulates a roster member and never derives anything from it beyond exposing it as-is.
    */
   readonly roster: readonly ColonistIdentity[];
+  /**
+   * Stage 2 Slice 5 (ADR-21 D6): every offer in M12's store — pending and retained resolved —
+   * as detached copies in stored (ascending-id) order. Read-only exposure for inspection only:
+   * per ADR-21 Invariant 8, resolved offers are never a decision input, and this surface is
+   * exactly the sanctioned non-decision read (inspection/replay/serialization).
+   */
+  readonly socialOffers: readonly SocialOffer[];
 }
 
 function assertLimit(limit: number): void {
@@ -159,6 +167,7 @@ export function inspect(state: SimulationState, recentLimit = 10): InspectionSum
     recentDecisions: recentDecisions(state, recentLimit),
     relationships: detach(allRelationshipPairViews(state.relationships, state.colonist.identity.id, state.roster)),
     roster: detach(state.roster),
+    socialOffers: detach(state.socialOffers.offers),
   };
 }
 

@@ -11,7 +11,7 @@ import { createPrng } from "../core/prng.js";
 import { deserialize, serialize } from "../core/serialization.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional } from "../world/world.js";
-import { TASK_TUNING } from "../config/tuning.js";
+import { SOCIAL_OFFER_TUNING, TASK_TUNING } from "../config/tuning.js";
 import { createColonist, withCurrentGoal, withNeeds, withSuspendedGoal } from "../colonist/colonist.js";
 import { createNeeds } from "../colonist/needs.js";
 import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState } from "./tick.js";
@@ -22,6 +22,7 @@ import { beginExecution, interruptExecution } from "../task/execution.js";
 import { taskDefinition } from "../task/tasks.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
 import { applyInteraction, createRelationshipStore, perspective } from "../colonist/relationships.js";
+import { createSocialOfferStore, type SocialOffer } from "../task/socialOffers.js";
 
 const policy = createDefaultPolicy();
 
@@ -45,6 +46,7 @@ function stateAtTickOfDay(
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
     roster: [],
+    socialOffers: createSocialOfferStore(),
   };
 }
 
@@ -160,14 +162,25 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
       initiatorId: "c1",
       responderId: "zeke",
       aTowardBDelta: 80,
-      bTowardADelta: 0,
+      bTowardADelta: 80, // the acceptance draw keys on the RESPONDER's regard (design D5) — warm both directions
     });
     const state = { ...base, relationships: warmRelationship.store, roster: [zeke] };
-    const final = run(state, 1).finalState;
+    const afterCommit = run(state, 1).finalState;
 
-    expect(final.colonist.currentGoal?.source).toBe("voluntary");
-    expect(final.colonist.currentGoal?.relatedColonistId).toBe("zeke");
-    expect(["conversation", "sharedDowntime"]).toContain(final.execution?.taskId);
+    expect(afterCommit.colonist.currentGoal?.source).toBe("voluntary");
+    expect(afterCommit.colonist.currentGoal?.relatedColonistId).toBe("zeke");
+    // Stage 2 Slice 5 (design D3): committing a social goal creates a pending OFFER — execution
+    // never begins on the creation tick (the one-tick response-delay floor).
+    expect(afterCommit.execution).toBeNull();
+    expect(afterCommit.socialOffers.offers).toHaveLength(1);
+    expect(afterCommit.socialOffers.offers[0]!.status).toBe("pending");
+    expect(afterCommit.socialOffers.offers[0]!.responderId).toBe("zeke");
+
+    // On the respondable tick the offer resolves; with an 80-affinity (bonded) responder this
+    // seed's draw accepts, and the existing execution path begins exactly as before.
+    const afterResolve = run(afterCommit, 1).finalState;
+    expect(afterResolve.socialOffers.offers[0]!.status).toBe("accepted");
+    expect(["conversation", "sharedDowntime"]).toContain(afterResolve.execution?.taskId);
   });
 
   it("conversation restores Social need while executing", () => {
@@ -388,6 +401,239 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
   });
 });
 
+describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, ADR-21)", () => {
+  const freeStart = policy.workTicks + policy.restTicks;
+
+  /** Hand-built mid-run state: committed conversation goal toward zeke with its pending offer (created "last tick"). */
+  function pendingOfferState(seed: number, offerOverrides: Partial<SocialOffer> = {}): SimulationState {
+    const base = stateAtTickOfDay(freeStart, { social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, seed);
+    const tickNow = base.clock.tick;
+    const goal = commitGoal(
+      {
+        source: "voluntary",
+        tier: 5,
+        key: "voluntary:social:conversation:zeke",
+        baseUrgency: 0.2,
+        relatedColonistId: "zeke",
+        relatedSocialTaskId: "conversation",
+      },
+      "test offer motivation",
+      tickNow,
+    );
+    const offer: SocialOffer = {
+      id: 0,
+      initiatorId: "c1",
+      responderId: "zeke",
+      action: "conversation",
+      createdAtTick: tickNow,
+      respondableAtTick: tickNow + 1,
+      expiresAtTick: tickNow + 4,
+      status: "pending",
+      resolvedAtTick: null,
+      reason: null,
+      ...offerOverrides,
+    };
+    return {
+      ...base,
+      colonist: withCurrentGoal(base.colonist, goal),
+      hasBootstrapped: true,
+      roster: [zeke],
+      socialOffers: { offers: [offer], nextOfferSequence: 1 },
+    };
+  }
+
+  it("accepts on the respondable tick (draw under the acceptance probability) and begins the existing execution path", () => {
+    // seed 7's first draw ≈ 0.0117 < 0.55 (acquainted — absent pair default) → accepted
+    const result = tick(pendingOfferState(7), 1);
+    const offer = result.state.socialOffers.offers[0]!;
+    expect(offer.status).toBe("accepted");
+    expect(offer.reason).toBeNull();
+    expect(offer.resolvedAtTick).toBe(result.state.clock.tick);
+    expect(result.state.execution?.taskId).toBe("conversation");
+    expect(result.events.some((e) => e.kind === "socialOfferResolved" && e.status === "accepted")).toBe(true);
+    expect(result.events.some((e) => e.kind === "executionBegun" && e.taskId === "conversation")).toBe(true);
+    expect(result.state.prng.draws).toBe(1); // exactly one attributed acceptance draw was spent
+  });
+
+  it("never resolves an offer on a tick before respondableAtTick — the response-delay floor", () => {
+    const state = pendingOfferState(7, { respondableAtTick: freeStart + 3, expiresAtTick: freeStart + 6 });
+    const afterOne = tick(state, 1);
+    expect(afterOne.state.socialOffers.offers[0]!.status).toBe("pending");
+    expect(afterOne.state.execution).toBeNull();
+    expect(afterOne.state.prng.draws).toBe(0); // no draw is spent on a not-yet-respondable offer
+  });
+
+  it("declines (draw at/above the probability): no execution, no Social restore, decline friction in both directions", () => {
+    // seed 1's first draw ≈ 0.6271 >= 0.55 → declined via acceptanceDraw
+    const before = pendingOfferState(1);
+    const socialBefore = before.colonist.needs.social.level;
+    const result = tick(before, 1);
+    const offer = result.state.socialOffers.offers[0]!;
+    expect(offer.status).toBe("declined");
+    expect(offer.reason).toBe("acceptanceDraw");
+    expect(result.state.execution).toBeNull();
+    expect(result.state.colonist.currentGoal).toBeNull(); // initiator's goal is abandoned, not left dangling
+    // ADR-18 D7: declined offers never restore Social — it only decayed this tick.
+    expect(result.state.colonist.needs.social.level).toBeLessThan(socialBefore);
+    // ADR-18 D6's decline row: forced-proximity friction, negative, both directions.
+    expect(perspective(result.state.relationships, "c1", "zeke").affinity).toBeLessThan(0);
+    expect(perspective(result.state.relationships, "zeke", "c1").affinity).toBeLessThan(0);
+  });
+
+  it("declines via the two-sided relationship gate without spending a PRNG draw", () => {
+    const hostile = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "directConflict",
+      initiatorId: "zeke",
+      responderId: "c1",
+      aTowardBDelta: 0,
+      bTowardADelta: -80, // zeke is hostile toward c1; c1's own view stays neutral
+    }).store;
+    const result = tick({ ...pendingOfferState(7), relationships: hostile }, 1);
+    const offer = result.state.socialOffers.offers[0]!;
+    expect(offer.status).toBe("declined");
+    expect(offer.reason).toBe("relationshipGate");
+    expect(result.state.prng.draws).toBe(0);
+  });
+
+  it("cancels when the offer-creating goal is gone (initiatorUnavailable), with no relationship or Social effect", () => {
+    const state = pendingOfferState(7);
+    const withoutGoal = { ...state, colonist: withCurrentGoal(state.colonist, null) };
+    const result = tick(withoutGoal, 1);
+    const offer = result.state.socialOffers.offers[0]!;
+    expect(offer.status).toBe("cancelled");
+    expect(offer.reason).toBe("initiatorUnavailable");
+    expect(result.state.relationships.pairs).toEqual({}); // cancellation is not a change source
+  });
+
+  it("a survivable interruption during the delay window suspends the offer-creating goal and HOLDS the offer pending", () => {
+    // Long delay so the interruption (critical hunger) lands inside the window.
+    const state = pendingOfferState(7, { respondableAtTick: freeStart + 6, expiresAtTick: freeStart + 12 });
+    const hungry = {
+      ...state,
+      colonist: withNeeds(state.colonist, { ...state.colonist.needs, hunger: { level: 0.1, ticksBelowLow: 50 } } as SimulationState["colonist"]["needs"]),
+    };
+    const afterInterrupt = tick(hungry, 1);
+    expect(afterInterrupt.state.colonist.suspendedGoal?.key).toBe("voluntary:social:conversation:zeke");
+    expect(afterInterrupt.state.suspendedExecution).toBeNull(); // offer-backed suspension parks no execution
+    expect(afterInterrupt.state.socialOffers.offers[0]!.status).toBe("pending");
+    // The next tick's lifecycle pass holds (step 3) — still pending, no draw spent on it.
+    const held = tick(afterInterrupt.state, 1);
+    expect(held.state.socialOffers.offers[0]!.status).toBe("pending");
+  });
+
+  it("expires once clock.tick reaches expiresAtTick while the goal is suspended, abandoning the stranded goal", () => {
+    const base = pendingOfferState(7);
+    const suspended = suspendGoal(base.colonist.currentGoal!);
+    const state: SimulationState = {
+      ...base,
+      colonist: withSuspendedGoal(withCurrentGoal(base.colonist, null), suspended),
+      socialOffers: { offers: [{ ...base.socialOffers.offers[0]!, expiresAtTick: freeStart + 1 }], nextOfferSequence: 1 },
+    };
+    const result = tick(state, 1);
+    const offer = result.state.socialOffers.offers[0]!;
+    expect(offer.status).toBe("expired");
+    expect(offer.reason).toBe("timeout");
+    expect(result.state.colonist.suspendedGoal).toBeNull(); // the goal must not later resume into direct execution
+    expect(result.state.relationships.pairs).toEqual({}); // expiry applies no relationship effect
+  });
+
+  it("identical seed and state reproduce the same offer-response sequence (Issue #120 determinism criterion)", () => {
+    const a = run(pendingOfferState(7), 30).finalState;
+    const b = run(pendingOfferState(7), 30).finalState;
+    expect(b.socialOffers).toEqual(a.socialOffers);
+    expect(b.prng).toEqual(a.prng);
+    // A different seed may legitimately resolve differently — the sequence is seed-determined,
+    // not hard-coded: seed 1's first draw declines where seed 7's accepts (see tests above).
+    const c = run(pendingOfferState(1), 30).finalState;
+    expect(c.socialOffers.offers[0]!.status).toBe("declined");
+    expect(a.socialOffers.offers[0]!.status).toBe("accepted");
+  });
+
+  it("resolved-offer retention never evicts pending offers (ADR-21 D4)", () => {
+    // Flood the store with more resolved offers than the retention window, plus one pending.
+    const resolved: SocialOffer[] = Array.from({ length: SOCIAL_OFFER_TUNING.resolvedOfferRetention + 5 }, (_, i) => ({
+      id: i,
+      initiatorId: "c1",
+      responderId: "zeke",
+      action: "conversation",
+      createdAtTick: 1,
+      respondableAtTick: 2,
+      expiresAtTick: 5,
+      status: "declined",
+      resolvedAtTick: 3,
+      reason: "acceptanceDraw",
+    }));
+    const base = pendingOfferState(7);
+    const pendingId = resolved.length;
+    const state: SimulationState = {
+      ...base,
+      socialOffers: {
+        offers: [...resolved, { ...base.socialOffers.offers[0]!, id: pendingId }],
+        nextOfferSequence: pendingId + 1,
+      },
+    };
+    const after = tick(state, 1).state;
+    // The pending offer resolved (accepted, seed 7) this tick but was never evicted while
+    // pending; eviction then trimmed the full RESOLVED population (the newly accepted offer
+    // included) to the retention window, oldest ids first.
+    expect(after.socialOffers.offers.some((o) => o.id === pendingId)).toBe(true);
+    expect(after.socialOffers.offers.length).toBe(SOCIAL_OFFER_TUNING.resolvedOfferRetention);
+    expect(after.socialOffers.offers[0]!.id).toBeGreaterThan(0); // oldest resolved ids evicted first
+    expect(after.socialOffers.nextOfferSequence).toBe(pendingId + 1); // eviction never rolls the counter back
+  });
+
+  it("accepted, declined, cancelled, and expired offers all survive save/load (terminal-state matrix)", () => {
+    const base = pendingOfferState(7);
+    const terminal: SocialOffer[] = (
+      [
+        ["accepted", null],
+        ["declined", "acceptanceDraw"],
+        ["cancelled", "initiatorUnavailable"],
+        ["expired", "timeout"],
+      ] as const
+    ).map(([status, reason], i) => ({
+      id: i,
+      initiatorId: "c1",
+      responderId: "zeke",
+      action: "conversation",
+      createdAtTick: 1,
+      respondableAtTick: 2,
+      expiresAtTick: 5,
+      status,
+      resolvedAtTick: 3,
+      reason,
+    }));
+    const state: SimulationState = { ...base, socialOffers: { offers: terminal, nextOfferSequence: terminal.length } };
+    const reloaded = deserialize(serialize(state));
+    expect(reloaded.socialOffers).toEqual(state.socialOffers);
+  });
+
+  it("full replay verification covers a run containing offer creation and resolution", () => {
+    // Organic end-to-end: bootstrap → social commit → offer → resolution, then verifyReplay
+    // proves the whole thing (traces AND terminal state, socialOffers included) reproduces.
+    const freeStartState = stateAtTickOfDay(freeStart, { social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, 31);
+    const initial = { ...freeStartState, roster: [zeke] };
+    const final = run(initial, 30).finalState;
+    expect(final.socialOffers.offers.length).toBeGreaterThan(0); // sanity: the run really exercised the protocol
+    expect(verifyReplay(initial, final).kind).toBe("match");
+  });
+
+  it("save/load round-trips a genuinely pending offer mid-delay without semantic change", () => {
+    const state = pendingOfferState(7, { respondableAtTick: freeStart + 3, expiresAtTick: freeStart + 6 });
+    const midDelay = tick(state, 1).state;
+    expect(midDelay.socialOffers.offers[0]!.status).toBe("pending");
+    const reloaded = deserialize(serialize(midDelay));
+    expect(reloaded.socialOffers).toEqual(midDelay.socialOffers);
+    // The reloaded run continues identically: same resolution on the same tick.
+    const a = run(midDelay, 3).finalState;
+    const b = run(reloaded, 3).finalState;
+    expect(b.socialOffers).toEqual(a.socialOffers);
+  });
+});
+
 describe("goal completion", () => {
   it("a satisfaction task completes when its need reaches the satisfaction point, then a fresh decision follows in the same tick", () => {
     // Rest period, rest need low but not critical — the only actionable candidate.
@@ -513,7 +759,7 @@ describe("goal interruption and resume — preserved execution progress (review 
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [],
+      roster: [], socialOffers: createSocialOfferStore(),
     };
 
     const result = tick(state, 1);
@@ -578,7 +824,7 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [],
+      roster: [], socialOffers: createSocialOfferStore(),
     };
 
     const result = tick(state, 1);
@@ -1031,7 +1277,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [],
+      roster: [], socialOffers: createSocialOfferStore(),
     };
     validateSimulationState(overflowState); // the hand-built precondition is itself valid
     const overflowResult = tick(overflowState, 1);
@@ -1071,7 +1317,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships,
-      roster: [],
+      roster: [], socialOffers: createSocialOfferStore(),
     };
   }
 
@@ -1111,7 +1357,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [],
+      roster: [], socialOffers: createSocialOfferStore(),
     };
     const result = run(bare, SIGNIFICANT_TICKS);
     expect(result.finalState.colonist.memory.filter((e) => e.type === "relational")).toEqual([]);
