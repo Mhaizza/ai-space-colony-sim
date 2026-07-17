@@ -736,11 +736,14 @@ describe("goal interruption and resume — preserved execution progress (review 
       const resumeEvent = result.events.find((e) => e.kind === "executionResumed");
       if (resumeEvent && resumeEvent.kind === "executionResumed") {
         resumed = true;
-        // The resumed execution's elapsedTicks is EXACTLY what it was at interruption —
-        // nothing progressed while suspended, and it is not reset to 0.
+        // The resumeEvent itself reports elapsedTicks EXACTLY as it was at interruption —
+        // nothing progressed while suspended, and it is not reset to 0. Review fix (phase
+        // ordering): Phase 6 (execution & consequences) now runs AFTER Phase 5 (decisions,
+        // design D2) — so the resumed execution receives its own +1 tick of progress in THIS
+        // SAME tick's Phase 6 pass, exactly like a freshly-adopted execution does.
         expect(resumeEvent.elapsedTicks).toBe(interruptedAtElapsedTicks);
         expect(resumeEvent.taskId).toBe("idlePresence");
-        expect(state.colonists[0]!.execution!.elapsedTicks).toBe(interruptedAtElapsedTicks);
+        expect(state.colonists[0]!.execution!.elapsedTicks).toBe(interruptedAtElapsedTicks + 1);
         expect(state.colonists[0]!.execution!.status).toBe("inProgress");
         // Goal identity fully preserved.
         expect(state.colonists[0]!.colonist.currentGoal?.key).toBe(originalVoluntary.key);
@@ -868,9 +871,11 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
     expect(result.state.colonists[0]!.colonist.suspendedGoal?.key).toBe("lowNeed:hunger");
     expect(result.state.colonists[0]!.colonist.suspendedGoal?.status).toBe("suspended");
     expect(result.state.colonists[0]!.suspendedExecution?.taskId).toBe("eatAtFoodStation");
-    // 7 (hand-set) + 1 (this tick's own progress phase, which runs before the interruption is
-    // detected — execution always advances first) = 8. Preserved thereafter, not reset to 0.
-    expect(result.state.colonists[0]!.suspendedExecution?.elapsedTicks).toBe(8);
+    // 7 (hand-set), unchanged: review fix (phase ordering) — interruption/suspension detection
+    // (design D2 phase 4/5) now runs BEFORE execution progress (phase 6), so an execution
+    // suspended THIS tick never reaches phase 6's progress pass this same tick (it is already
+    // parked in suspendedExecution by the time that pass runs). Preserved thereafter, not reset.
+    expect(result.state.colonists[0]!.suspendedExecution?.elapsedTicks).toBe(7);
     expect(result.state.colonists[0]!.suspendedExecution?.status).toBe("interrupted");
 
     // The current goal is now the critical rest goal.

@@ -66,7 +66,6 @@ import {
   resumeGoal,
   suspendGoal,
   type Goal,
-  type GoalCandidate,
 } from "../decision/goals.js";
 import { decideFromCandidates, type DecisionOutcome } from "../decision/decide.js";
 import { isTaskComplete, resolveTask, type TaskId, type TaskResolution } from "../task/tasks.js";
@@ -628,107 +627,34 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   relationships = atrophyResult.store;
   relationshipConsequences.push(...atrophyResult.consequences);
 
-  // --- Phase: execution progress and its owned consequences — per colonist, canonical order.
-  // `world` and `relationships` thread SEQUENTIALLY across colonists in this order, so shared
-  // contention (e.g. two colonists eating the same tick) resolves deterministically.
-  const bootstrapCandidates = new Set<string>(); // execution was null BEFORE this tick's progress
-  for (const id of ids) {
-    const rt = runtimes.get(id)!;
-    let colonist = rt.colonist;
-    let execution = rt.execution;
-    const traits = colonist.identity.baseTraits;
-    const others = allIdentities.filter((i) => i.id !== id);
-    const activeSharedMealPartner =
-      execution?.status === "inProgress" && execution.taskId === "eatAtFoodStation" && world.foodStock > 0
-        ? sharedMealPartnerId(others, id, relationships)
-        : undefined;
-
-    if (execution !== null && execution.status === "inProgress") {
-      const progressed = progressExecution(execution, deltaTicks);
-      events.push({ kind: "executionProgressed", taskId: progressed.taskId, elapsedTicks: progressed.elapsedTicks });
-
-      const worldBeforeProgress = world;
-      const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks, traits);
-      if (consequences.needs !== undefined) colonist = withNeeds(colonist, consequences.needs);
-      if (consequences.world !== undefined) world = consequences.world;
-
-      const consumedFood =
-        progressed.taskId === "eatAtFoodStation" && consequences.world !== undefined ? worldBeforeProgress.foodStock - consequences.world.foodStock : 0;
-      if (activeSharedMealPartner !== undefined && consumedFood > 0) {
-        // Copilot-confirmed defect: scale by the same restorationFraction the Hunger consequence
-        // uses (execution.ts:125-136) — a final tick that consumes only a fraction of
-        // foodConsumptionPerTick must not grant the full per-tick Social/affinity credit.
-        const fullFoodConsumption = TASK_TUNING.foodConsumptionPerTick * deltaTicks;
-        const sharedMealFraction = fullFoodConsumption > 0 ? consumedFood / fullFoodConsumption : 0;
-        colonist = withNeeds(
-          colonist,
-          restoreNeedByAmount(colonist.needs, "social", TASK_TUNING.sharedMealSocialRestorePerTick * deltaTicks * sharedMealFraction, traits),
-        );
-        const interaction = applyInteraction(relationships, {
-          colonistAId: colonist.identity.id,
-          colonistBId: activeSharedMealPartner,
-          tick: clock.tick,
-          changeSource: "sharedTaskCompletion",
-          initiatorId: colonist.identity.id,
-          responderId: activeSharedMealPartner,
-          aTowardBDelta: TASK_TUNING.sharedMealAffinityDeltaPerTick * deltaTicks * sharedMealFraction,
-          bTowardADelta: 0,
-        });
-        relationships = interaction.store;
-        relationshipConsequences.push(...interaction.consequences);
-      }
-
-      const relatedColonistId = colonist.currentGoal?.relatedColonistId;
-      const socialRestorePerTick = socialNeedRestorePerTick(progressed.taskId);
-      const affinityDeltaPerTick = companionshipAffinityDeltaPerTick(progressed.taskId);
-      if (relatedColonistId !== undefined && (socialRestorePerTick > 0 || affinityDeltaPerTick > 0)) {
-        if (socialRestorePerTick > 0) {
-          colonist = withNeeds(colonist, restoreNeedByAmount(colonist.needs, "social", socialRestorePerTick * deltaTicks, traits));
-        }
-        if (affinityDeltaPerTick > 0) {
-          const interaction = applyInteraction(relationships, {
-            colonistAId: colonist.identity.id,
-            colonistBId: relatedColonistId,
-            tick: clock.tick,
-            changeSource: "sharedTaskCompletion",
-            initiatorId: colonist.identity.id,
-            responderId: relatedColonistId,
-            aTowardBDelta: affinityDeltaPerTick * deltaTicks,
-            bTowardADelta: 0,
-          });
-          relationships = interaction.store;
-          relationshipConsequences.push(...interaction.consequences);
-        }
-      }
-
-      execution = progressed;
-    } else if (execution === null) {
-      bootstrapCandidates.add(id);
-    }
-
-    runtimes.set(id, { ...runtimes.get(id)!, colonist, execution });
-  }
-
   // Bootstrap (review-fix carried over from Stage 1, now per colonist): fires once per colonist,
   // ONLY on the simulation's genuine first tick (state.hasBootstrapped === false) — every
-  // colonist whose execution was null at the START of this tick gets the one-time kick into its
-  // first decision. Gating on "no execution" alone would fire every tick a colonist has none for
-  // ANY reason (e.g. a blocked goal); blocked-goal retry has its own trigger below.
+  // colonist whose execution is null AT THE START of this tick gets the one-time kick into its
+  // first decision. Computed from tick-start execution — independent of when execution progress
+  // runs later (design D2 phase 6). Gating on "no execution" alone would fire every tick a
+  // colonist has none for ANY reason (e.g. a blocked goal); blocked-goal retry has its own
+  // trigger below.
   if (!state.hasBootstrapped) {
-    for (const id of bootstrapCandidates) {
-      events.push({ kind: "bootstrap" });
-      setTriggered(id);
+    for (const id of ids) {
+      if (runtimes.get(id)!.execution === null) {
+        events.push({ kind: "bootstrap" });
+        setTriggered(id);
+      }
     }
   }
   // Set unconditionally: after this tick has run at all, the state is no longer "genuinely
   // fresh" — regardless of whether any colonist's bootstrap actually fired.
   const hasBootstrapped = true;
 
-  // --- Phase: completion & blockage detection — per colonist, canonical order. Uses a
-  // STRUCTURAL-ONLY snapshot: resolveTask/isTaskComplete/checkEligibility/checkAvailability
-  // never read `nearbyColonists` (only currentPeriod/modules/foodStock), so this can safely run
-  // before the real observation basis exists — and per D2's phase-boundary rule, it MUST run
-  // first, since that basis is itself built from this phase's outputs (see below).
+  // --- Phase: completion & blockage detection (design D2 phase 4) — per colonist, canonical
+  // order. Uses a STRUCTURAL-ONLY snapshot: resolveTask/isTaskComplete/checkEligibility/
+  // checkAvailability never read `nearbyColonists` (only currentPeriod/modules/foodStock), so
+  // this can safely run before the real observation basis exists — and it must, per D2, since
+  // the basis is built from this phase's outputs (below). Review fix: checked against needs as
+  // decayed in Phase 3 only — this tick's own execution consequences apply later, in Phase 6
+  // (design D2's phase 6: decisions before execution/consequences), so a task whose completion
+  // depends on THIS tick's own progress is detected on the FOLLOWING tick — the literal fixed
+  // seven-phase order (engineering spec §5), not collapsed for same-tick convenience.
   const structuralSnapshot = buildSnapshot(clock, state.policy, world, []);
   for (const id of ids) {
     const rt = runtimes.get(id)!;
@@ -761,10 +687,11 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // --- The single shared observation basis (design D3) — built here, exactly once, from every
   // colonist's real Tier-1 ambient state AS OF THE END OF PHASE 4 (post completion/blockage,
   // pre any Phase 5 decision), via the same `ambientStateFor` registry the inspector already
-  // uses — retiring the hardcoded "resting" placeholder. Every deciding colonist's snapshot
-  // below is built from this SAME array (self excluded): the structural mechanism that makes
-  // same-tick non-observability hold — no colonist's Phase 5 commitment can appear in it,
-  // because it is fixed before Phase 5 begins for anyone.
+  // uses — retiring the hardcoded "resting" placeholder. Every deciding colonist's snapshot,
+  // AND Phase 6's offer-eligibility reads below, are built from this SAME fixed array (self
+  // excluded where applicable): the structural mechanism that makes same-tick non-observability
+  // hold — no colonist's Phase 5 commitment or Phase 6 execution-begin can appear in it, because
+  // it is fixed before Phase 5 begins for anyone and never rebuilt afterward this tick.
   const sharedObservations: ObservableColonist[] = ids.map((id) => {
     const rt = runtimes.get(id)!;
     return { id, ambientState: ambientStateFor(rt.execution, rt.colonist.stress) };
@@ -772,13 +699,170 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   const snapshotFor = (ownId: string): WorldSnapshot =>
     buildSnapshot(clock, state.policy, world, sharedObservations.filter((o) => o.id !== ownId));
 
-  // --- Phase: social offer lifecycle (Stage 2 Slice 5 — design D3's Phase 6 steps, ADR-21;
-  // Stage 2 Slice 6b — design D5: any colonist may initiate or respond). Every pending offer is
-  // examined in ascending id order: expiry → cancellation → hold → response delay → eligibility
-  // → acceptance draw. Runs before memory formation so a decline's forcedProximityMutualStress
-  // consequence feeds the same M9 pass as every other interaction this tick (unchanged from
-  // pre-6b). Reads pending offers only (ADR-21 Invariant 8) and the shared observation basis
-  // for responder eligibility.
+  // --- Phase: interruption / suspension-resolved detection (design D2 phase 4, continued) —
+  // per colonist, canonical order. Candidate generation here is TIER-CHECK ONLY, via the
+  // STRUCTURAL-only snapshot: every social (voluntary, tier-5) candidate is the lowest priority
+  // tier that exists, so it can never satisfy `tier < currentGoal.tier` — `nearbyColonists`
+  // content is therefore provably irrelevant to whether an interruption or suspension-resolution
+  // fires. The REAL candidates (content-accurate, from the shared basis) are generated
+  // separately in Phase 5 for the actual decision — this phase does not cache/reuse them.
+  // Unconditional per colonist — it must run even when another trigger already fired, because it
+  // determines whether the current goal needs to be *properly suspended* (goal-system's suspend
+  // model) rather than silently overwritten by whatever the decision phase adopts next.
+  const wasInterruption = new Map<string, boolean>();
+  const resumeFromSuspension = new Map<string, boolean>();
+  for (const id of ids) {
+    const rt = runtimes.get(id)!;
+    const tierCandidates = generateCandidates(structuralSnapshot, rt.colonist.needs, rt.colonist.identity.baseTraits);
+
+    let interrupted = false;
+    if (rt.colonist.currentGoal !== null && rt.colonist.currentGoal.status === "active") {
+      const outranksCurrent = tierCandidates.some((c) => c.tier < rt.colonist.currentGoal!.tier);
+      if (outranksCurrent) {
+        events.push({
+          kind: "higherPriorityCondition",
+          interruptedGoalKey: rt.colonist.currentGoal.key,
+          interruptedTier: rt.colonist.currentGoal.tier,
+        });
+        setTriggered(id);
+        interrupted = true;
+      }
+    }
+    wasInterruption.set(id, interrupted);
+
+    // Suspension-resolved is gated behind "no interruption just happened" (Stage 1
+    // simplification): an interruption occurring the same tick a suspension might otherwise
+    // resolve is resolved in favor of the new interruption.
+    let resumed = false;
+    if (!interrupted && rt.colonist.suspendedGoal !== null) {
+      const outranksSuspended = tierCandidates.some((c) => c.tier < rt.colonist.suspendedGoal!.tier);
+      if (!outranksSuspended) {
+        events.push({ kind: "suspensionResolved", goalKey: rt.colonist.suspendedGoal.key });
+        setTriggered(id);
+        resumed = true;
+      }
+    }
+    resumeFromSuspension.set(id, resumed);
+  }
+
+  // --- Phase: decisions (design D2 phase 5) — per colonist, canonical order (EQ-3 / ADR-22 D2:
+  // PRNG draw order is fixed by this same canonical iteration, so replay reproduces the exact
+  // draw sequence regardless of which colonist happens to draw). Gating: skip re-deciding if
+  // nothing triggered this colonist this tick, or if a trigger fired but same-tier commitment
+  // stickiness applies (decision-loop §2 — "a colonist does not re-litigate their commitment
+  // every tick; they re-decide when something happens" — the *something* has to actually bear
+  // on the commitment). Candidates here are REAL (content-accurate, from the shared observation
+  // basis) — generated fresh per deciding colonist, since Phase 4's tier-check candidates above
+  // deliberately used a structural-only snapshot and are not reused.
+  for (const id of ids) {
+    if (!triggered.get(id)) continue;
+
+    const rt = runtimes.get(id)!;
+    let colonist = rt.colonist;
+    let execution = rt.execution;
+    let suspendedExecution = rt.suspendedExecution;
+
+    const interrupted = wasInterruption.get(id)!;
+    const resumed = resumeFromSuspension.get(id)!;
+
+    if (!resumed && !interrupted && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
+      continue; // commitment stickiness — this trigger doesn't bear on this colonist's goal
+    }
+
+    const snapshot = snapshotFor(id);
+
+    if (resumed && colonist.suspendedGoal !== null && suspendedExecution !== null) {
+      const result = resumeSuspended(colonist, suspendedExecution, snapshot, events);
+      colonist = result.colonist;
+      execution = result.execution;
+      suspendedExecution = null; // the pair is resolved either way (resumed, replaced, or blocked)
+    } else if (resumed && colonist.suspendedGoal !== null) {
+      // Offer-backed suspended goal (Stage 2 Slice 5): no execution was ever parked — the goal
+      // resumes to the active slot with no execution, and its still-pending offer picks back up
+      // at the next tick's lifecycle pass (design D3 step 3's hold ending).
+      const resumedGoal = resumeGoal(colonist.suspendedGoal);
+      colonist = withCurrentGoal(withSuspendedGoal(colonist, null), resumedGoal);
+      execution = null;
+    } else {
+      if (interrupted && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
+        const suspended = suspendCurrentGoal(colonist, execution, suspendedExecution, events);
+        colonist = suspended.colonist;
+        execution = suspended.execution;
+        suspendedExecution = suspended.suspendedExecution;
+      }
+
+      const candidates = generateCandidates(snapshot, colonist.needs, colonist.identity.baseTraits);
+      const decision = decideFromCandidates(candidates, colonist, prng, clock.tick, snapshot, relationships);
+      events.push({ kind: "decision", outcome: decision });
+      // Every higher-tier candidate the filter found non-actionable and fell through — retained
+      // in decision.blockedCandidates (decisionLog persists the full outcome already), and ALSO
+      // surfaced as its own "blockage" event so the flat trace shows it without unpacking a
+      // decision payload, matching the existing post-commit blockage event's visibility.
+      for (const blocked of decision.blockedCandidates) {
+        events.push({ kind: "blockage", goalKey: blocked.key, reasons: blocked.reasons });
+      }
+      prng = decision.prngState;
+
+      if (
+        decision.kind === "commit" &&
+        decision.goal.relatedColonistId !== undefined &&
+        (decision.goal.relatedSocialTaskId === "conversation" || decision.goal.relatedSocialTaskId === "sharedDowntime")
+      ) {
+        // Stage 2 Slice 5 (design D3, Phase 5): committing a Conversation/Shared Downtime goal
+        // creates a pending offer instead of beginning execution — the responder answers in a
+        // later tick's lifecycle pass (never this tick: the one-tick response-delay floor).
+        // Re-committing an identical intent while its offer is still pending reuses that offer.
+        const goal = decision.goal;
+        const responderId = decision.goal.relatedColonistId;
+        const action = decision.goal.relatedSocialTaskId;
+        const existing = socialOffers.offers.find((o) => o.status === "pending" && offerGoalKey(o) === goal.key);
+        if (existing === undefined) {
+          const created = createPendingOffer({
+            store: socialOffers,
+            initiatorId: colonist.identity.id,
+            responderId,
+            action,
+            createdAtTick: clock.tick,
+            responseDelayTicks: SOCIAL_OFFER_TUNING.responseDelayTicks,
+            offerTimeoutTicks: SOCIAL_OFFER_TUNING.offerTimeoutTicks,
+          });
+          socialOffers = created.store;
+          events.push({
+            kind: "socialOfferCreated",
+            offerId: created.offer.id,
+            initiatorId: created.offer.initiatorId,
+            responderId: created.offer.responderId,
+            action: created.offer.action,
+            respondableAtTick: created.offer.respondableAtTick,
+            expiresAtTick: created.offer.expiresAtTick,
+          });
+        }
+        colonist = withCurrentGoal(colonist, goal);
+        execution = null;
+      } else if (decision.kind === "commit") {
+        const adopted = adoptAndResolve(colonist, decision.goal, snapshot, clock.tick, events);
+        colonist = adopted.colonist;
+        execution = adopted.execution;
+      } else {
+        colonist = withCurrentGoal(colonist, null);
+        execution = null;
+      }
+    }
+
+    runtimes.set(id, { ...rt, colonist, execution, suspendedExecution });
+  }
+
+  // --- Phase: execution & consequences (design D2 phase 6) — the offer lifecycle pass FIRST
+  // (ascending offer id, unchanged from Slice 5), THEN each colonist's execution progress and
+  // consequence fan-out in canonical order (design D2's own ordering within phase 6). Both use
+  // the SAME pre-Phase-5 shared observation basis built above — Phase 6 must never feed back
+  // into any same-tick Phase 5 input, and reusing the fixed basis here (rather than rebuilding
+  // it post-decision) is what guarantees that.
+  //
+  // Stage 2 Slice 5 — design D3's Phase 6 steps, ADR-21; Stage 2 Slice 6b — design D5: any
+  // colonist may initiate or respond. Every pending offer is examined in ascending id order:
+  // expiry → cancellation → hold → response delay → eligibility → acceptance draw. Reads
+  // pending offers only (ADR-21 Invariant 8) and the shared observation basis for eligibility.
   for (const offer of state.socialOffers.offers) {
     if (offer.status !== "pending") continue;
     const goalKey = offerGoalKey(offer);
@@ -832,7 +916,9 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
       writeBack();
       continue;
     }
-    // 2 — cancellation: the offer-creating goal was abandoned or replaced (design D6).
+    // 2 — cancellation: the offer-creating goal was abandoned or replaced (design D6). Runs
+    // after Phase 5 (review fix), so a same-tick interruption/replacement of the initiator's
+    // goal is correctly observed here.
     const initiatorHoldsGoal = colonist.currentGoal?.key === goalKey || colonist.suspendedGoal?.key === goalKey;
     if (!initiatorHoldsGoal) {
       resolved("cancelled", "initiatorUnavailable");
@@ -907,10 +993,92 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   }
   socialOffers = evictResolvedOffers(socialOffers, SOCIAL_OFFER_TUNING.resolvedOfferRetention);
 
+  // Execution progress and its owned consequences (design D2 phase 6, second half) — per
+  // colonist, canonical order, for whatever execution now exists (continuing from tick start, OR
+  // freshly begun this same tick by decisions/offer-acceptance above — a newly-begun execution
+  // DOES receive its first tick of progress in this same pass, per phase 6's ordering after
+  // phase 5). `world` and `relationships` thread SEQUENTIALLY across colonists in canonical
+  // order, so shared contention (e.g. two colonists eating the same tick) resolves
+  // deterministically.
+  for (const id of ids) {
+    const rt = runtimes.get(id)!;
+    let colonist = rt.colonist;
+    const execution = rt.execution;
+    if (execution === null || execution.status !== "inProgress") continue;
+
+    const traits = colonist.identity.baseTraits;
+    const others = allIdentities.filter((i) => i.id !== id);
+    // Copilot-confirmed defect (carried over): gated on world.foodStock > 0 too — an in-progress
+    // eating execution with depleted stock consumes nothing this tick, so it must not exempt the
+    // pair from atrophy as if a shared meal occurred. (Atrophy's own exclusion set was computed
+    // earlier from tick-start executions, per design D2's phase-3 placement of atrophy — unaffected
+    // by this pass running later in phase 6.)
+    const activeSharedMealPartner =
+      execution.taskId === "eatAtFoodStation" && world.foodStock > 0 ? sharedMealPartnerId(others, id, relationships) : undefined;
+
+    const progressed = progressExecution(execution, deltaTicks);
+    events.push({ kind: "executionProgressed", taskId: progressed.taskId, elapsedTicks: progressed.elapsedTicks });
+
+    const worldBeforeProgress = world;
+    const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks, traits);
+    if (consequences.needs !== undefined) colonist = withNeeds(colonist, consequences.needs);
+    if (consequences.world !== undefined) world = consequences.world;
+
+    const consumedFood =
+      progressed.taskId === "eatAtFoodStation" && consequences.world !== undefined ? worldBeforeProgress.foodStock - consequences.world.foodStock : 0;
+    if (activeSharedMealPartner !== undefined && consumedFood > 0) {
+      // Copilot-confirmed defect: scale by the same restorationFraction the Hunger consequence
+      // uses (execution.ts:125-136) — a final tick that consumes only a fraction of
+      // foodConsumptionPerTick must not grant the full per-tick Social/affinity credit.
+      const fullFoodConsumption = TASK_TUNING.foodConsumptionPerTick * deltaTicks;
+      const sharedMealFraction = fullFoodConsumption > 0 ? consumedFood / fullFoodConsumption : 0;
+      colonist = withNeeds(
+        colonist,
+        restoreNeedByAmount(colonist.needs, "social", TASK_TUNING.sharedMealSocialRestorePerTick * deltaTicks * sharedMealFraction, traits),
+      );
+      const interaction = applyInteraction(relationships, {
+        colonistAId: colonist.identity.id,
+        colonistBId: activeSharedMealPartner,
+        tick: clock.tick,
+        changeSource: "sharedTaskCompletion",
+        initiatorId: colonist.identity.id,
+        responderId: activeSharedMealPartner,
+        aTowardBDelta: TASK_TUNING.sharedMealAffinityDeltaPerTick * deltaTicks * sharedMealFraction,
+        bTowardADelta: 0,
+      });
+      relationships = interaction.store;
+      relationshipConsequences.push(...interaction.consequences);
+    }
+
+    const relatedColonistId = colonist.currentGoal?.relatedColonistId;
+    const socialRestorePerTick = socialNeedRestorePerTick(progressed.taskId);
+    const affinityDeltaPerTick = companionshipAffinityDeltaPerTick(progressed.taskId);
+    if (relatedColonistId !== undefined && (socialRestorePerTick > 0 || affinityDeltaPerTick > 0)) {
+      if (socialRestorePerTick > 0) {
+        colonist = withNeeds(colonist, restoreNeedByAmount(colonist.needs, "social", socialRestorePerTick * deltaTicks, traits));
+      }
+      if (affinityDeltaPerTick > 0) {
+        const interaction = applyInteraction(relationships, {
+          colonistAId: colonist.identity.id,
+          colonistBId: relatedColonistId,
+          tick: clock.tick,
+          changeSource: "sharedTaskCompletion",
+          initiatorId: colonist.identity.id,
+          responderId: relatedColonistId,
+          aTowardBDelta: affinityDeltaPerTick * deltaTicks,
+          bTowardADelta: 0,
+        });
+        relationships = interaction.store;
+        relationshipConsequences.push(...interaction.consequences);
+      }
+    }
+
+    runtimes.set(id, { ...runtimes.get(id)!, colonist, execution: progressed });
+  }
+
   // --- Phase: memory formation (M9) — involuntary, per colonist, from cumulative need/stress
-  // movement since each baseline (see ColonistRuntime doc). Runs after the offer lifecycle pass
-  // so a decline's forcedProximityMutualStress consequence (above) feeds the same relational-
-  // memory pass below as every other interaction this tick — unchanged from pre-6b.
+  // movement since each baseline (see ColonistRuntime doc). Runs after Phase 6 so it sees the
+  // FULL tick's need/stress movement, including this tick's own execution consequences.
   for (const id of ids) {
     const rt = runtimes.get(id)!;
     let memory = rt.colonist.memory;
@@ -947,9 +1115,9 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
 
   // --- Phase: relationship consequences (M10) + Relational memory formation (M9) — per colonist,
   // filtered to pairs that colonist is party to. `relationshipConsequences` is now complete
-  // (atrophy + execution-progress interactions + offer-decline friction). Fact-only (ADR-20 D7);
-  // reads only each consequence's own delta/resulting-affinity fields, never the store's
-  // materialized records. Baselines track cumulative movement per partner.
+  // (atrophy + Phase 6 execution-progress interactions + offer-decline friction). Fact-only
+  // (ADR-20 D7); reads only each consequence's own delta/resulting-affinity fields, never the
+  // store's materialized records. Baselines track cumulative movement per partner.
   for (const id of ids) {
     const rt = runtimes.get(id)!;
     let memory = rt.colonist.memory;
@@ -979,162 +1147,6 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
       colonist: memory !== runtimes.get(id)!.colonist.memory ? withMemory(runtimes.get(id)!.colonist, memory) : runtimes.get(id)!.colonist,
       relationshipAffinityBaselines,
     });
-  }
-
-  // --- Phase: condition & trigger detection (interruption / suspension-resolved) — per
-  // colonist, canonical order, using that colonist's own REAL snapshot (shared observation
-  // basis, self excluded). Candidate generation happens at most once per tick per colonist,
-  // reused by the decision phase below — avoiding duplicate calls into goals.ts. Unconditional
-  // per colonist — it must run even when another trigger already fired for that colonist,
-  // because it determines whether the current goal needs to be *properly suspended*
-  // (goal-system's suspend model) rather than silently overwritten by whatever the decision
-  // phase adopts next.
-  const candidatesByColonist = new Map<string, readonly GoalCandidate[]>();
-  const snapshotByColonist = new Map<string, WorldSnapshot>();
-  const wasInterruption = new Map<string, boolean>();
-  const resumeFromSuspension = new Map<string, boolean>();
-
-  for (const id of ids) {
-    const rt = runtimes.get(id)!;
-    const traits = rt.colonist.identity.baseTraits;
-    const snapshot = snapshotFor(id);
-    snapshotByColonist.set(id, snapshot);
-    const candidates = generateCandidates(snapshot, rt.colonist.needs, traits);
-    candidatesByColonist.set(id, candidates);
-
-    let interrupted = false;
-    if (rt.colonist.currentGoal !== null && rt.colonist.currentGoal.status === "active") {
-      const outranksCurrent = candidates.some((c) => c.tier < rt.colonist.currentGoal!.tier);
-      if (outranksCurrent) {
-        events.push({
-          kind: "higherPriorityCondition",
-          interruptedGoalKey: rt.colonist.currentGoal.key,
-          interruptedTier: rt.colonist.currentGoal.tier,
-        });
-        setTriggered(id);
-        interrupted = true;
-      }
-    }
-    wasInterruption.set(id, interrupted);
-
-    // Suspension-resolved is gated behind "no interruption just happened" (Stage 1
-    // simplification): an interruption occurring the same tick a suspension might otherwise
-    // resolve is resolved in favor of the new interruption.
-    let resumed = false;
-    if (!interrupted && rt.colonist.suspendedGoal !== null) {
-      const outranksSuspended = candidates.some((c) => c.tier < rt.colonist.suspendedGoal!.tier);
-      if (!outranksSuspended) {
-        events.push({ kind: "suspensionResolved", goalKey: rt.colonist.suspendedGoal.key });
-        setTriggered(id);
-        resumed = true;
-      }
-    }
-    resumeFromSuspension.set(id, resumed);
-  }
-
-  // --- Phase: decision — per colonist, canonical order (EQ-3 / ADR-22 D2: PRNG draw order is
-  // fixed by this same canonical iteration, so replay reproduces the exact draw sequence
-  // regardless of which colonist happens to draw). Gating mirrors pre-6b semantics exactly, per
-  // colonist: skip re-deciding if nothing triggered this colonist this tick, or if a trigger
-  // fired but same-tier commitment stickiness applies (decision-loop §2 — "a colonist does not
-  // re-litigate their commitment every tick; they re-decide when something happens" — the
-  // *something* has to actually bear on the commitment).
-  for (const id of ids) {
-    if (!triggered.get(id)) continue;
-
-    const rt = runtimes.get(id)!;
-    let colonist = rt.colonist;
-    let execution = rt.execution;
-    let suspendedExecution = rt.suspendedExecution;
-
-    const interrupted = wasInterruption.get(id)!;
-    const resumed = resumeFromSuspension.get(id)!;
-
-    if (!resumed && !interrupted && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
-      continue; // commitment stickiness — this trigger doesn't bear on this colonist's goal
-    }
-
-    const snapshot = snapshotByColonist.get(id)!;
-    const candidates = candidatesByColonist.get(id)!;
-
-    if (resumed && colonist.suspendedGoal !== null && suspendedExecution !== null) {
-      const result = resumeSuspended(colonist, suspendedExecution, snapshot, events);
-      colonist = result.colonist;
-      execution = result.execution;
-      suspendedExecution = null; // the pair is resolved either way (resumed, replaced, or blocked)
-    } else if (resumed && colonist.suspendedGoal !== null) {
-      // Offer-backed suspended goal (Stage 2 Slice 5): no execution was ever parked — the goal
-      // resumes to the active slot with no execution, and its still-pending offer picks back up
-      // at the next tick's lifecycle pass (design D3 step 3's hold ending).
-      const resumedGoal = resumeGoal(colonist.suspendedGoal);
-      colonist = withCurrentGoal(withSuspendedGoal(colonist, null), resumedGoal);
-      execution = null;
-    } else {
-      if (interrupted && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
-        const suspended = suspendCurrentGoal(colonist, execution, suspendedExecution, events);
-        colonist = suspended.colonist;
-        execution = suspended.execution;
-        suspendedExecution = suspended.suspendedExecution;
-      }
-
-      const decision = decideFromCandidates(candidates, colonist, prng, clock.tick, snapshot, relationships);
-      events.push({ kind: "decision", outcome: decision });
-      // Every higher-tier candidate the filter found non-actionable and fell through — retained
-      // in decision.blockedCandidates (decisionLog persists the full outcome already), and ALSO
-      // surfaced as its own "blockage" event so the flat trace shows it without unpacking a
-      // decision payload, matching the existing post-commit blockage event's visibility.
-      for (const blocked of decision.blockedCandidates) {
-        events.push({ kind: "blockage", goalKey: blocked.key, reasons: blocked.reasons });
-      }
-      prng = decision.prngState;
-
-      if (
-        decision.kind === "commit" &&
-        decision.goal.relatedColonistId !== undefined &&
-        (decision.goal.relatedSocialTaskId === "conversation" || decision.goal.relatedSocialTaskId === "sharedDowntime")
-      ) {
-        // Stage 2 Slice 5 (design D3, Phase 5): committing a Conversation/Shared Downtime goal
-        // creates a pending offer instead of beginning execution — the responder answers in a
-        // later tick's lifecycle pass (never this tick: the one-tick response-delay floor).
-        // Re-committing an identical intent while its offer is still pending reuses that offer.
-        const goal = decision.goal;
-        const responderId = decision.goal.relatedColonistId;
-        const action = decision.goal.relatedSocialTaskId;
-        const existing = socialOffers.offers.find((o) => o.status === "pending" && offerGoalKey(o) === goal.key);
-        if (existing === undefined) {
-          const created = createPendingOffer({
-            store: socialOffers,
-            initiatorId: colonist.identity.id,
-            responderId,
-            action,
-            createdAtTick: clock.tick,
-            responseDelayTicks: SOCIAL_OFFER_TUNING.responseDelayTicks,
-            offerTimeoutTicks: SOCIAL_OFFER_TUNING.offerTimeoutTicks,
-          });
-          socialOffers = created.store;
-          events.push({
-            kind: "socialOfferCreated",
-            offerId: created.offer.id,
-            initiatorId: created.offer.initiatorId,
-            responderId: created.offer.responderId,
-            action: created.offer.action,
-            respondableAtTick: created.offer.respondableAtTick,
-            expiresAtTick: created.offer.expiresAtTick,
-          });
-        }
-        colonist = withCurrentGoal(colonist, goal);
-        execution = null;
-      } else if (decision.kind === "commit") {
-        const adopted = adoptAndResolve(colonist, decision.goal, snapshot, clock.tick, events);
-        colonist = adopted.colonist;
-        execution = adopted.execution;
-      } else {
-        colonist = withCurrentGoal(colonist, null);
-        execution = null;
-      }
-    }
-
-    runtimes.set(id, { ...rt, colonist, execution, suspendedExecution });
   }
 
   return finish(
