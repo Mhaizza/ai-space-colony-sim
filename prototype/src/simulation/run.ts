@@ -1,6 +1,5 @@
-// Headless run harness — sets up a Stage 1 single-colonist simulation and advances it in
-// fixed steps via tick.ts. No save/load, no relationships, no social actions, no UI, no
-// rendering, no networking (Build Step 8 scope).
+// Headless run harness — sets up a Stage 2 simulation and advances it in fixed steps via
+// tick.ts. Every colonist in the collection is fully simulated (Stage 2 Slice 6b).
 //
 // Fixed-step rule (review fix 2, 2026-07-10): tick() only accepts BASE_TICKS_PER_STEP, so
 // run() is the only place a larger timeline advances — by calling tick() once per step, never
@@ -20,10 +19,11 @@ import { createDecisionLog, createEventLog } from "../records/logs.js";
 import { createFreshMemoryBaselines, tick, validateSimulationState, type ColonistRuntime, type SimulationState, type TickEvent } from "./tick.js";
 
 /**
- * Creates a fresh Stage 1 simulation: default station, default policy, one simulated colonist,
- * seeded PRNG, plus an optional identity-only roster (Stage 2 Slice 2) of other colonists a
- * relationship pair may reference. Roster entries are never simulated (no needs/stress/memory/
- * decision loop) — the empty default preserves every pre-Slice-2 run's exact behavior.
+ * Creates a fresh Stage 2 simulation: default station, default policy, seeded PRNG, and a
+ * canonically ordered collection (ADR-22 D1) of fully simulated colonists (Stage 2 Slice 6b —
+ * every entry, not just the first, is simulated each tick by tick.ts). `colonistId`/`colonistName`
+ * plus the optional `roster` are both just colonists to seed; the split is a call-shape
+ * convenience only — both paths produce identical runtime containers.
  */
 export function createInitialState(
   seed: number,
@@ -33,15 +33,8 @@ export function createInitialState(
   baseTraits: readonly TraitId[] = [],
   roster: readonly ColonistIdentity[] = [],
 ): SimulationState {
-  // ADR-22 D1: one canonically ordered colonist collection. The former identity-only roster
-  // parameter is preserved for callers, but each entry now becomes a full (inert) runtime
-  // container — fresh colonist state, no execution, fresh baselines. ponytail: 6a keeps these
-  // entries unsimulated (tick.ts's transitional single-active rule); 6b promotes them.
-  //
-  // Review fix (PR #132): sorting into canonical order is a STORAGE requirement (ADR-22 D1)
-  // independent of which colonist the caller means to simulate — `colonistId` is that explicit
-  // choice, carried separately as `activeColonistId` so it never depends on where it lands in
-  // the sorted array (a roster id could sort before it).
+  // ADR-22 D1: one canonically ordered colonist collection, sorted at creation (the collection
+  // itself carries no notion of "which one is primary" — every entry is simulated).
   const runtimes: ColonistRuntime[] = [
     freshRuntime(createColonist(colonistId, colonistName, skills, baseTraits)),
     ...roster.map((entry) => freshRuntime(createColonist(entry.id, entry.name, entry.skills, entry.baseTraits))),
@@ -51,7 +44,6 @@ export function createInitialState(
     world: createWorld(),
     policy: createDefaultPolicy(),
     colonists: runtimes,
-    activeColonistId: colonistId,
     prng: createPrng(seed),
     hasBootstrapped: false,
     eventLog: createEventLog(),

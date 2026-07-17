@@ -354,6 +354,27 @@ describe("socialOffers terminal-state verification (Stage 2 Slice 5, ADR-21 D6)"
   });
 });
 
+describe("multi-colonist replay determinism (Stage 2 Slice 6b, design D2/D3, ADR-22 D2)", () => {
+  const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
+  const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
+
+  it("a 3-colonist fixed-seed run replays bit-identically — every colonist fully simulated, EQ-3's canonical draw order intact", () => {
+    const initial = createInitialState(7, "c1", "Maya", ["engineering"], [], [zeke, yara]);
+    const final = run(initial, 300).finalState;
+    expect(final.colonists).toHaveLength(3);
+    // Sanity: at least one non-first colonist actually decided something this run (promotion
+    // is real, not accidentally still single-colonist).
+    expect(final.colonists.some((r) => r.colonist.identity.id !== "c1" && r.colonist.currentGoal !== null)).toBe(true);
+    expect(verifyReplay(initial, final).kind).toBe("match");
+  });
+
+  it("identical seed and colonist set reproduce an identical multi-colonist run (determinism, not just replay-verification)", () => {
+    const a = run(createInitialState(11, "c1", "Maya", ["engineering"], [], [zeke, yara]), 150).finalState;
+    const b = run(createInitialState(11, "c1", "Maya", ["engineering"], [], [zeke, yara]), 150).finalState;
+    expect(a).toEqual(b);
+  });
+});
+
 describe("diverging seeds", () => {
   it("replaying retained records against a different seed's initial state diverges — deterministically, not flakily", () => {
     const { final } = completedRun(1, 300);

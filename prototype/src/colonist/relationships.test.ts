@@ -378,6 +378,53 @@ describe("applyAtrophy — write path (ADR-20 D7, D4)", () => {
     expect(result.store).toBe(store);
     expect(result.consequences).toEqual([]);
   });
+
+  it("REGRESSION (Stage 2 Slice 6b): excludes MULTIPLE simultaneously-active pairs, not just one", () => {
+    // Promoting every colonist to full simulation means more than one pair can be mid-interaction
+    // in the same tick — excludedPairs generalizes from a single PairKey to a set for exactly
+    // this reason (tick.ts's own companionship-credit path already applies that pair's delta
+    // directly; atrophy must not ALSO apply to it the same tick).
+    const record = (pair: readonly [string, string]): PairRecord => ({
+      pair,
+      minTowardMaxAffinity: 10,
+      maxTowardMinAffinity: 10,
+      history: [],
+      lastInteractionTick: 0,
+    });
+    const store: RelationshipStore = {
+      pairs: {
+        alice: { bob: record(["alice", "bob"]), carol: record(["alice", "carol"]) },
+        dave: { erin: record(["dave", "erin"]) },
+      },
+    };
+
+    const result = applyAtrophy(store, 100, [
+      ["alice", "bob"],
+      ["dave", "erin"],
+    ]);
+
+    // Both excluded pairs are untouched by reference; the third (not excluded) pair moved.
+    expect(result.store.pairs["alice"]!["bob"]).toBe(store.pairs["alice"]!["bob"]);
+    expect(result.store.pairs["dave"]!["erin"]).toBe(store.pairs["dave"]!["erin"]);
+    expect(result.consequences).toHaveLength(1);
+    expect(result.consequences[0]).toMatchObject({ kind: "atrophy", pair: ["alice", "carol"] });
+    expect(result.store.pairs["alice"]!["carol"]!.minTowardMaxAffinity).toBeLessThan(10);
+  });
+
+  it("an empty exclusion array behaves exactly like no exclusion at all", () => {
+    const record: PairRecord = {
+      pair: ["alice", "bob"],
+      minTowardMaxAffinity: 10,
+      maxTowardMinAffinity: 10,
+      history: [],
+      lastInteractionTick: 0,
+    };
+    const store: RelationshipStore = { pairs: { alice: { bob: record } } };
+    const withEmpty = applyAtrophy(store, 50, []);
+    const withUndefined = applyAtrophy(store, 50, undefined);
+    expect(withEmpty.store).toEqual(withUndefined.store);
+    expect(withEmpty.consequences).toEqual(withUndefined.consequences);
+  });
 });
 
 describe("serialization + load validation (ADR-20 D8)", () => {

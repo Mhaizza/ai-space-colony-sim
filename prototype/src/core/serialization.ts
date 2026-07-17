@@ -41,7 +41,7 @@ import type { DecisionLog, DecisionRecord, EventLog, EventRecord } from "../reco
 import { validateSimulationState, type ColonistRuntime, type SimulationState, type TickEvent } from "../simulation/tick.js";
 
 /** The current save format version — bump on any incompatible SimulationState shape change. */
-export const SAVE_FORMAT_VERSION = 5; // v5: ADR-22 D3 — the per-colonist runtime collection replaces the singular slots and the roster.
+export const SAVE_FORMAT_VERSION = 6; // v6: Stage 2 Slice 6b — activeColonistId (6a's transitional selector) is retired; every colonists[] entry is now fully simulated.
 
 const GOAL_STATUSES: readonly GoalStatus[] = ["active", "suspended", "blocked", "completed", "abandoned"];
 const EXECUTION_STATUSES: readonly ExecutionStatus[] = ["inProgress", "interrupted", "completed", "aborted"];
@@ -677,7 +677,6 @@ export function serialize(state: SimulationState): string {
     world: state.world,
     policy: state.policy,
     colonists: state.colonists, // ADR-22 D3: serialized in stored (canonical) order; already JSON-safe
-    activeColonistId: state.activeColonistId, // ponytail: 6a transitional field (review fix, PR #132) — see tick.ts's SimulationState doc
     prng: state.prng,
     hasBootstrapped: state.hasBootstrapped,
     eventLog: state.eventLog,
@@ -720,9 +719,6 @@ export function deserialize(json: string): SimulationState {
     world: readWorld(o.world),
     policy: readPolicy(o.policy),
     colonists,
-    // ponytail: 6a transitional field — validated as a real member of the loaded collection by
-    // validateSimulationState below, not re-derived here (single cross-field check, one place).
-    activeColonistId: expectString(o.activeColonistId, "activeColonistId"),
     prng: deserializePrng(JSON.stringify(o.prng)),
     hasBootstrapped: expectBoolean(o.hasBootstrapped, "hasBootstrapped"),
     eventLog: readEventLog(o.eventLog),
