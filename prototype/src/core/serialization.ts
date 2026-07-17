@@ -38,10 +38,10 @@ import type {
 import type { Execution, ExecutionStatus } from "../task/execution.js";
 import type { TaskDefinition, TaskId, TaskResolution } from "../task/tasks.js";
 import type { DecisionLog, DecisionRecord, EventLog, EventRecord } from "../records/logs.js";
-import { validateSimulationState, type SimulationState, type TickEvent } from "../simulation/tick.js";
+import { validateSimulationState, type ColonistRuntime, type SimulationState, type TickEvent } from "../simulation/tick.js";
 
 /** The current save format version — bump on any incompatible SimulationState shape change. */
-export const SAVE_FORMAT_VERSION = 4; // v4: adds the Stage 2 Slice 5 social offer store (ADR-21 D5).
+export const SAVE_FORMAT_VERSION = 5; // v5: ADR-22 D3 — the per-colonist runtime collection replaces the singular slots and the roster.
 
 const GOAL_STATUSES: readonly GoalStatus[] = ["active", "suspended", "blocked", "completed", "abandoned"];
 const EXECUTION_STATUSES: readonly ExecutionStatus[] = ["inProgress", "interrupted", "completed", "aborted"];
@@ -160,18 +160,18 @@ function readPolicy(raw: unknown): ShiftPolicy {
 
 // --- Colonist ---
 
-function readNeeds(raw: unknown): NeedsState {
-  const o = expectObject(raw, "colonist.needs");
+function readNeeds(raw: unknown, field: string): NeedsState {
+  const o = expectObject(raw, field);
   const needs = {} as Record<NeedId, NeedTrack>;
   for (const id of NEEDS) {
-    const t = expectObject(o[id], `colonist.needs.${id}`);
+    const t = expectObject(o[id], `${field}.${id}`);
     // Copilot-confirmed defect: previously only checked "is a finite number," so impossible
     // states like level: -10 or a fractional/negative ticksBelowLow passed straight into
     // continuation/replay. The model's own invariants (needs.ts NeedTrack doc) are enforced
     // here, the same as every other structural check in this file.
     needs[id] = {
-      level: expectUnitInterval(t.level, `colonist.needs.${id}.level`),
-      ticksBelowLow: expectNonNegativeInteger(t.ticksBelowLow, `colonist.needs.${id}.ticksBelowLow`),
+      level: expectUnitInterval(t.level, `${field}.${id}.level`),
+      ticksBelowLow: expectNonNegativeInteger(t.ticksBelowLow, `${field}.${id}.ticksBelowLow`),
     };
   }
   return needs;
@@ -189,48 +189,48 @@ function readNeeds(raw: unknown): NeedsState {
  * `clockTick` is the already-deserialized clock's tick, cross-checked so no entry postdates
  * the save's own present.
  */
-function readMemory(raw: unknown, clockTick: number): MemoryPool {
-  const entries = expectArray(raw, "colonist.memory");
+function readMemory(raw: unknown, clockTick: number, field: string): MemoryPool {
+  const entries = expectArray(raw, field);
   if (entries.length > MEMORY_TUNING.poolSize) {
-    fail(`"colonist.memory" exceeds the bounded pool capacity (${MEMORY_TUNING.poolSize}), got ${entries.length} entries`);
+    fail(`"${field}" exceeds the bounded pool capacity (${MEMORY_TUNING.poolSize}), got ${entries.length} entries`);
   }
   const seenIds = new Set<number>();
   return entries.map((entryRaw, i): MemoryEntry => {
-    const o = expectObject(entryRaw, `colonist.memory[${i}]`);
-    const type = expectOneOf(o.type, ["deprivation", "condition", "relational"] as const, `colonist.memory[${i}].type`);
-    const context = expectObject(o.context, `colonist.memory[${i}].context`);
-    const id = expectNonNegativeInteger(o.id, `colonist.memory[${i}].id`);
-    if (seenIds.has(id)) fail(`"colonist.memory[${i}].id" duplicates id ${id} — memory ids are unique`);
+    const o = expectObject(entryRaw, `${field}[${i}]`);
+    const type = expectOneOf(o.type, ["deprivation", "condition", "relational"] as const, `${field}[${i}].type`);
+    const context = expectObject(o.context, `${field}[${i}].context`);
+    const id = expectNonNegativeInteger(o.id, `${field}[${i}].id`);
+    if (seenIds.has(id)) fail(`"${field}[${i}].id" duplicates id ${id} — memory ids are unique`);
     seenIds.add(id);
-    const formedAtTick = expectNonNegativeInteger(o.formedAtTick, `colonist.memory[${i}].formedAtTick`);
+    const formedAtTick = expectNonNegativeInteger(o.formedAtTick, `${field}[${i}].formedAtTick`);
     if (formedAtTick > clockTick) {
-      fail(`"colonist.memory[${i}].formedAtTick" (${formedAtTick}) postdates the saved clock tick (${clockTick})`);
+      fail(`"${field}[${i}].formedAtTick" (${formedAtTick}) postdates the saved clock tick (${clockTick})`);
     }
     const base = {
       id,
       formedAtTick,
-      impact: expectUnitInterval(o.impact, `colonist.memory[${i}].impact`),
+      impact: expectUnitInterval(o.impact, `${field}[${i}].impact`),
     };
     if (type === "deprivation") {
-      return { ...base, type, context: { needId: expectOneOf(context.needId, NEEDS, `colonist.memory[${i}].context.needId`) } };
+      return { ...base, type, context: { needId: expectOneOf(context.needId, NEEDS, `${field}[${i}].context.needId`) } };
     }
     if (type === "condition") {
-      return { ...base, type, context: { direction: expectOneOf(context.direction, ["rising", "falling"] as const, `colonist.memory[${i}].context.direction`) } };
+      return { ...base, type, context: { direction: expectOneOf(context.direction, ["rising", "falling"] as const, `${field}[${i}].context.direction`) } };
     }
     return {
       ...base,
       type,
       context: {
-        otherId: expectString(context.otherId, `colonist.memory[${i}].context.otherId`),
-        direction: expectOneOf(context.direction, ["positive", "negative"] as const, `colonist.memory[${i}].context.direction`),
+        otherId: expectString(context.otherId, `${field}[${i}].context.otherId`),
+        direction: expectOneOf(context.direction, ["positive", "negative"] as const, `${field}[${i}].context.direction`),
       },
     };
   });
 }
 
-function readStress(raw: unknown): StressState {
-  const o = expectObject(raw, "colonist.stress");
-  return { level: expectNumber(o.level, "colonist.stress.level") };
+function readStress(raw: unknown, field: string): StressState {
+  const o = expectObject(raw, field);
+  return { level: expectNumber(o.level, `${field}.level`) };
 }
 
 function readGoal(raw: unknown, field: string): Goal {
@@ -275,26 +275,37 @@ function readIdentity(raw: unknown, field = "colonist.identity"): ColonistIdenti
 }
 
 /**
- * Reads the Stage 2 Slice 2 roster: an array of identity-only records for colonists other than
- * the simulated `colonist`, each validated exactly like `colonist.identity` (same closed
- * trait-id set, same structural checks) — reject-don't-repair, same as everywhere else in this
- * module. Duplicate ids (against each other or against the primary colonist) are NOT rejected
- * here — that cross-field invariant belongs to `validateSimulationState` (tick.ts), the one
- * place cross-field SimulationState invariants are defined, so it isn't re-derived here.
+ * Reads the ADR-22 per-colonist runtime collection: one container per colonist, each holding
+ * the colonist state, execution slots, and memory-formation baselines the singular v4 fields
+ * used to hold. Structural validation per entry happens here; the collection-level invariants
+ * (non-empty, unique, canonically ordered ids) belong to `validateSimulationState` (tick.ts),
+ * the one place cross-field SimulationState invariants are defined, so they aren't re-derived
+ * here — deserialize() calls it as the final gate, exactly as before.
  */
-function readRoster(raw: unknown): readonly ColonistIdentity[] {
-  return expectArray(raw, "roster").map((entryRaw, i) => readIdentity(entryRaw, `roster[${i}]`));
+function readColonists(raw: unknown, clockTick: number): readonly ColonistRuntime[] {
+  return expectArray(raw, "colonists").map((entryRaw, i): ColonistRuntime => {
+    const field = `colonists[${i}]`;
+    const o = expectObject(entryRaw, field);
+    return {
+      colonist: readColonist(o.colonist, clockTick, `${field}.colonist`),
+      execution: readNullableExecution(o.execution, `${field}.execution`),
+      suspendedExecution: readNullableExecution(o.suspendedExecution, `${field}.suspendedExecution`),
+      deprivationBaselines: readDeprivationBaselines(o.deprivationBaselines, `${field}.deprivationBaselines`),
+      stressBaseline: expectNumber(o.stressBaseline, `${field}.stressBaseline`),
+      relationshipAffinityBaselines: readRelationshipAffinityBaselines(o.relationshipAffinityBaselines, `${field}.relationshipAffinityBaselines`),
+    };
+  });
 }
 
-function readColonist(raw: unknown, clockTick: number): ColonistState {
-  const o = expectObject(raw, "colonist");
+function readColonist(raw: unknown, clockTick: number, field: string): ColonistState {
+  const o = expectObject(raw, field);
   return {
-    identity: readIdentity(o.identity),
-    needs: readNeeds(o.needs),
-    memory: readMemory(o.memory, clockTick),
-    stress: readStress(o.stress),
-    currentGoal: readNullableGoal(o.currentGoal, "colonist.currentGoal"),
-    suspendedGoal: readNullableGoal(o.suspendedGoal, "colonist.suspendedGoal"),
+    identity: readIdentity(o.identity, `${field}.identity`),
+    needs: readNeeds(o.needs, `${field}.needs`),
+    memory: readMemory(o.memory, clockTick, `${field}.memory`),
+    stress: readStress(o.stress, `${field}.stress`),
+    currentGoal: readNullableGoal(o.currentGoal, `${field}.currentGoal`),
+    suspendedGoal: readNullableGoal(o.suspendedGoal, `${field}.suspendedGoal`),
   };
 }
 
@@ -317,11 +328,11 @@ function readNullableExecution(raw: unknown, field: string): Execution | null {
 
 // --- Deprivation baselines / stress baseline ---
 
-function readDeprivationBaselines(raw: unknown): Readonly<Record<NeedId, number>> {
-  const o = expectObject(raw, "deprivationBaselines");
+function readDeprivationBaselines(raw: unknown, field: string): Readonly<Record<NeedId, number>> {
+  const o = expectObject(raw, field);
   const result = {} as Record<NeedId, number>;
   for (const id of NEEDS) {
-    result[id] = expectNumber(o[id], `deprivationBaselines.${id}`);
+    result[id] = expectNumber(o[id], `${field}.${id}`);
   }
   return result;
 }
@@ -331,11 +342,11 @@ function readDeprivationBaselines(raw: unknown): Readonly<Record<NeedId, number>
  * partner id, an open set (unlike deprivationBaselines' fixed NEEDS keys), since a colonist may
  * be party to any number of relationship pairs. Every own key must be a finite number.
  */
-function readRelationshipAffinityBaselines(raw: unknown): Readonly<Record<string, number>> {
-  const o = expectObject(raw, "relationshipAffinityBaselines");
+function readRelationshipAffinityBaselines(raw: unknown, field: string): Readonly<Record<string, number>> {
+  const o = expectObject(raw, field);
   const result: Record<string, number> = {};
   for (const key of Object.keys(o)) {
-    result[key] = expectNumber(o[key], `relationshipAffinityBaselines.${key}`);
+    result[key] = expectNumber(o[key], `${field}.${key}`);
   }
   return result;
 }
@@ -665,18 +676,13 @@ export function serialize(state: SimulationState): string {
     clock: state.clock,
     world: state.world,
     policy: state.policy,
-    colonist: state.colonist,
-    execution: state.execution,
-    suspendedExecution: state.suspendedExecution,
+    colonists: state.colonists, // ADR-22 D3: serialized in stored (canonical) order; already JSON-safe
+    activeColonistId: state.activeColonistId, // ponytail: 6a transitional field (review fix, PR #132) — see tick.ts's SimulationState doc
     prng: state.prng,
-    deprivationBaselines: state.deprivationBaselines,
-    stressBaseline: state.stressBaseline,
-    relationshipAffinityBaselines: state.relationshipAffinityBaselines,
     hasBootstrapped: state.hasBootstrapped,
     eventLog: state.eventLog,
     decisionLog: state.decisionLog,
     relationships: serializeRelationshipStore(state.relationships),
-    roster: state.roster,
     socialOffers: state.socialOffers, // already JSON-safe; validated (never repaired) on load by socialOffers.ts (ADR-21 D5)
   });
 }
@@ -702,31 +708,26 @@ export function deserialize(json: string): SimulationState {
   }
 
   const clock = deserializeClock(JSON.stringify(o.clock));
-  const colonist = readColonist(o.colonist, clock.tick);
-  const roster = readRoster(o.roster);
-  // Stage 2 Slice 2: the roster's identity-only records are now known colonist ids too, so a
-  // materialized two-party relationship pair can reference a real roster member instead of
-  // always rejecting as "unknown colonist id" (build step 3's original single-colonist limit).
-  const knownColonistIds = new Set([colonist.identity.id, ...roster.map((r) => r.id)]);
+  // The clock's tick is threaded in so memory formation ticks can be cross-checked against
+  // the save's own present (a memory formed in the future is malformed, not repairable).
+  const colonists = readColonists(o.colonists, clock.tick);
+  // ADR-22 D4: the collection is the one authoritative colonist list — both stores validate
+  // against exactly its id set.
+  const knownColonistIds = new Set(colonists.map((r) => r.colonist.identity.id));
 
   const state: SimulationState = {
     clock,
     world: readWorld(o.world),
     policy: readPolicy(o.policy),
-    // The clock's tick is threaded in so memory formation ticks can be cross-checked against
-    // the save's own present (a memory formed in the future is malformed, not repairable).
-    colonist,
-    execution: readNullableExecution(o.execution, "execution"),
-    suspendedExecution: readNullableExecution(o.suspendedExecution, "suspendedExecution"),
+    colonists,
+    // ponytail: 6a transitional field — validated as a real member of the loaded collection by
+    // validateSimulationState below, not re-derived here (single cross-field check, one place).
+    activeColonistId: expectString(o.activeColonistId, "activeColonistId"),
     prng: deserializePrng(JSON.stringify(o.prng)),
-    deprivationBaselines: readDeprivationBaselines(o.deprivationBaselines),
-    stressBaseline: expectNumber(o.stressBaseline, "stressBaseline"),
-    relationshipAffinityBaselines: readRelationshipAffinityBaselines(o.relationshipAffinityBaselines),
     hasBootstrapped: expectBoolean(o.hasBootstrapped, "hasBootstrapped"),
     eventLog: readEventLog(o.eventLog),
     decisionLog: readDecisionLog(o.decisionLog),
-    relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick, colonist.identity.id),
-    roster,
+    relationships: deserializeRelationshipStore(o.relationships, knownColonistIds, clock.tick),
     // ADR-21 D5: the social offer slice validates against the same known-colonist set and
     // loaded clock as relationships — socialOffers.ts owns its own rules, this module calls in.
     socialOffers: validateSocialOfferStore(o.socialOffers, knownColonistIds, clock.tick),

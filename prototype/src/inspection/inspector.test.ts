@@ -42,22 +42,25 @@ function sampleRelationshipStore(): RelationshipStore {
 describe("active execution summary", () => {
   it("surfaces the running execution, current goal, needs, stress, and PRNG state as direct reads", () => {
     const state = run(createInitialState(42, "c1", "Maya", ["engineering"]), 100).finalState;
-    expect(state.execution).not.toBeNull(); // sanity: fixture actually has a running execution
+    const rt = state.colonists[0]!;
+    expect(rt.execution).not.toBeNull(); // sanity: fixture actually has a running execution
 
     const summary = inspect(state);
     expect(summary.tick).toBe(100);
     expect(summary.day).toBe(1);
     expect(summary.period).toBe("work");
-    expect(summary.colonist).toEqual(state.colonist.identity);
-    expect(summary.execution).toEqual(state.execution);
-    expect(summary.currentGoal).toEqual(state.colonist.currentGoal);
-    expect(summary.stress).toBe(state.colonist.stress.level);
-    expect(summary.ambientState).toBe("working"); // fixture is mid-shift, not stressed
+    expect(summary.colonists).toHaveLength(1);
+    const me = summary.colonists[0]!;
+    expect(me.identity).toEqual(rt.colonist.identity);
+    expect(me.execution).toEqual(rt.execution);
+    expect(me.currentGoal).toEqual(rt.colonist.currentGoal);
+    expect(me.stress).toBe(rt.colonist.stress.level);
+    expect(me.ambientState).toBe("working"); // fixture is mid-shift, not stressed
     expect(summary.prng).toEqual(state.prng);
     expect(summary.foodStock).toBe(state.world.foodStock);
-    for (const row of summary.needs) {
-      expect(row.level).toBe(state.colonist.needs[row.id].level);
-      expect(row.ticksBelowLow).toBe(state.colonist.needs[row.id].ticksBelowLow);
+    for (const row of me.needs) {
+      expect(row.level).toBe(rt.colonist.needs[row.id].level);
+      expect(row.ticksBelowLow).toBe(rt.colonist.needs[row.id].ticksBelowLow);
     }
   });
 });
@@ -82,15 +85,15 @@ describe("suspended-pair summary", () => {
     };
     const state: SimulationState = {
       ...base,
-      colonist: { ...base.colonist, suspendedGoal },
-      suspendedExecution,
+      colonists: [{ ...base.colonists[0]!, colonist: { ...base.colonists[0]!.colonist, suspendedGoal }, suspendedExecution }],
     };
 
     const summary = inspect(state);
-    expect(summary.suspendedGoal).toEqual(suspendedGoal);
-    expect(summary.suspendedExecution).toEqual(suspendedExecution);
-    expect(summary.suspendedGoal!.status).toBe("suspended");
-    expect(summary.suspendedExecution!.status).toBe("interrupted");
+    const me = summary.colonists[0]!;
+    expect(me.suspendedGoal).toEqual(suspendedGoal);
+    expect(me.suspendedExecution).toEqual(suspendedExecution);
+    expect(me.suspendedGoal!.status).toBe("suspended");
+    expect(me.suspendedExecution!.status).toBe("interrupted");
   });
 });
 
@@ -154,25 +157,25 @@ describe("input immutability", () => {
 describe("detached snapshots — mutating a result never aliases back into the state (final review fix)", () => {
   function activeState(): SimulationState {
     const state = run(createInitialState(42, "c1", "Maya", ["engineering"]), 100).finalState;
-    expect(state.execution).not.toBeNull();
-    expect(state.colonist.currentGoal).not.toBeNull();
+    expect(state.colonists[0]!.execution).not.toBeNull();
+    expect(state.colonists[0]!.colonist.currentGoal).not.toBeNull();
     return state;
   }
 
   it("mutating the returned currentGoal does not alter state.colonist.currentGoal", () => {
     const state = activeState();
-    const originalKey = state.colonist.currentGoal!.key;
+    const originalKey = state.colonists[0]!.colonist.currentGoal!.key;
     const summary = inspect(state);
-    (summary.currentGoal as { key: string }).key = "tampered";
-    expect(state.colonist.currentGoal!.key).toBe(originalKey);
+    (summary.colonists[0]!.currentGoal as { key: string }).key = "tampered";
+    expect(state.colonists[0]!.colonist.currentGoal!.key).toBe(originalKey);
   });
 
   it("mutating the returned execution does not alter state.execution", () => {
     const state = activeState();
-    const originalElapsed = state.execution!.elapsedTicks;
+    const originalElapsed = state.colonists[0]!.execution!.elapsedTicks;
     const summary = inspect(state);
-    (summary.execution as { elapsedTicks: number }).elapsedTicks = 999999;
-    expect(state.execution!.elapsedTicks).toBe(originalElapsed);
+    (summary.colonists[0]!.execution as { elapsedTicks: number }).elapsedTicks = 999999;
+    expect(state.colonists[0]!.execution!.elapsedTicks).toBe(originalElapsed);
   });
 
   it("mutating the returned suspended goal/execution does not alter the state", () => {
@@ -192,13 +195,16 @@ describe("detached snapshots — mutating a result never aliases back into the s
       startedAtTick: 0,
       elapsedTicks: 5,
     };
-    const state: SimulationState = { ...base, colonist: { ...base.colonist, suspendedGoal }, suspendedExecution };
+    const state: SimulationState = {
+      ...base,
+      colonists: [{ ...base.colonists[0]!, colonist: { ...base.colonists[0]!.colonist, suspendedGoal }, suspendedExecution }],
+    };
 
     const summary = inspect(state);
-    (summary.suspendedGoal as { key: string }).key = "tampered";
-    (summary.suspendedExecution as { elapsedTicks: number }).elapsedTicks = 999999;
-    expect(state.colonist.suspendedGoal!.key).toBe("shiftAssignment:work");
-    expect(state.suspendedExecution!.elapsedTicks).toBe(5);
+    (summary.colonists[0]!.suspendedGoal as { key: string }).key = "tampered";
+    (summary.colonists[0]!.suspendedExecution as { elapsedTicks: number }).elapsedTicks = 999999;
+    expect(state.colonists[0]!.colonist.suspendedGoal!.key).toBe("shiftAssignment:work");
+    expect(state.colonists[0]!.suspendedExecution!.elapsedTicks).toBe(5);
   });
 
   it("mutating the returned PRNG summary does not alter state.prng", () => {
@@ -229,7 +235,7 @@ describe("detached snapshots — mutating a result never aliases back into the s
     const state = activeState();
     const snapshot = JSON.parse(JSON.stringify(state));
     const summary = inspect(state);
-    (summary.colonist.skills as string[]).push("tampered");
+    (summary.colonists[0]!.identity.skills as string[]).push("tampered");
     expect(state).toEqual(snapshot);
   });
 });
@@ -328,19 +334,19 @@ describe("relationship pair inspection (Stage 2 build step 5, ADR-20 D2)", () =>
   });
 });
 
-describe("roster inspection (Stage 2 Slice 2)", () => {
+describe("colonist collection inspection (Stage 2 Slice 6a, ADR-22 D6)", () => {
   const zeke = { id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: [] } as const;
   const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
 
-  it("exposes the roster as-is, alongside the relationship pairs it may reference", () => {
+  it("exposes one summary per collection entry, alongside the relationship pairs they may reference", () => {
     const base = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]);
     const state: SimulationState = { ...base, relationships: sampleRelationshipStore() };
     const summary = inspect(state);
-    expect(summary.roster).toEqual([zeke, yara]);
+    expect(summary.colonists.map((c) => c.identity.id)).toEqual(["c1", "yara", "zeke"]);
     expect(summary.relationships.length).toBeGreaterThan(0);
   });
 
-  it("shows the absent-pair default for roster colonists before any relationship materializes", () => {
+  it("shows the absent-pair default for every unmaterialized collection pair", () => {
     const state = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke]);
     const summary = inspect(state);
     expect(summary.relationships).toEqual([
@@ -354,16 +360,16 @@ describe("roster inspection (Stage 2 Slice 2)", () => {
     ]);
   });
 
-  it("a real run with no roster reports it empty (unchanged Stage 1 behavior)", () => {
+  it("a single-colonist run reports exactly one summary (unchanged Stage 1 behavior)", () => {
     const state = run(createInitialState(1, "c1", "Maya", ["engineering"]), 100).finalState;
-    expect(inspect(state).roster).toEqual([]);
+    expect(inspect(state).colonists).toHaveLength(1);
   });
 
-  it("detached: mutating the returned roster never aliases back into the state", () => {
+  it("detached: mutating a returned colonist summary never aliases back into the state", () => {
     const base = createInitialState(1, "c1", "Maya", [], [], [zeke]);
     const summary = inspect(base);
-    (summary.roster as unknown as { name: string }[])[0]!.name = "Tampered";
-    expect(base.roster[0]!.name).toBe("Zeke");
+    (summary.colonists[1]!.identity as { name: string }).name = "Tampered";
+    expect(base.colonists[1]!.colonist.identity.name).toBe("Zeke");
   });
 });
 

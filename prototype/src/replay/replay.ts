@@ -136,15 +136,10 @@ const STATE_FIELDS = [
   "clock",
   "world",
   "policy",
-  "colonist",
-  "execution",
-  "suspendedExecution",
+  "colonists", // Stage 2 Slice 6a (ADR-22 D5): the per-colonist runtime collection — replaces the seven retired singular entries; diffed generically, divergences path as colonists[i].…
+  "activeColonistId", // ponytail: 6a transitional field (review fix, PR #132) — a plain scalar, diffed generically.
   "prng",
-  "deprivationBaselines",
-  "stressBaseline",
   "relationships", // Stage 2 build step 5: M10's pair store — a plain nested object, diffed generically like every other field.
-  "relationshipAffinityBaselines", // Stage 2 build step 8: cumulative per-partner drift tracking.
-  "roster", // Stage 2 Slice 2: identity-only multi-colonist roster — a plain array, diffed generically.
   "socialOffers", // Stage 2 Slice 5 (ADR-21 D6): M12's offer store — diffed generically like every other field.
 ] as const;
 
