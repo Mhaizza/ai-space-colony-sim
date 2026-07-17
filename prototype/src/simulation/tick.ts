@@ -36,6 +36,7 @@ import {
   applyInteraction,
   assertSafeColonistId,
   canonicalPairId,
+  perspective,
   type RelationshipConsequence,
   type RelationshipStore,
 } from "../colonist/relationships.js";
@@ -336,6 +337,20 @@ function rosterObservations(roster: readonly ColonistIdentity[]): readonly Obser
   return roster.map((identity) => ({ id: identity.id, ambientState: "resting" }));
 }
 
+function sharedMealPartnerId(roster: readonly ColonistIdentity[], ownerId: string, relationships: RelationshipStore): string | undefined {
+  const isNonHostile = (state: string) => state !== "hostile" && state !== "fractured";
+  return roster.find((identity) => {
+    if (identity.id === ownerId) return false;
+    // Codex-confirmed defect: gate on BOTH directions — relationship drift is one-way, so
+    // checking only ownerId's perspective let a partner who has drifted Hostile toward the
+    // owner (while the owner's own view is still neutral) still count as eligible company.
+    return (
+      isNonHostile(perspective(relationships, ownerId, identity.id).state) &&
+      isNonHostile(perspective(relationships, identity.id, ownerId).state)
+    );
+  })?.id;
+}
+
 function detectNeedThresholdCrossings(
   before: ColonistState["needs"],
   after: ColonistState["needs"],
@@ -501,9 +516,16 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   let relationships = state.relationships;
   const relationshipConsequences: RelationshipConsequence[] = [];
 
-  const activeSocialPartner = execution?.status === "inProgress" ? colonist.currentGoal?.relatedColonistId : undefined;
+  // Copilot-confirmed defect: gated on world.foodStock > 0 too — an in-progress eating
+  // execution with depleted stock consumes nothing this tick (see the consumedFood guard
+  // below), so it must not exempt the pair from atrophy as if a shared meal occurred.
+  const activeSharedMealPartner =
+    execution?.status === "inProgress" && execution.taskId === "eatAtFoodStation" && world.foodStock > 0
+      ? sharedMealPartnerId(state.roster, colonist.identity.id, relationships)
+      : undefined;
+  const activeSocialPartner = execution?.status === "inProgress" ? (colonist.currentGoal?.relatedColonistId ?? activeSharedMealPartner) : undefined;
   const activeSocialPair =
-    activeSocialPartner !== undefined && companionshipAffinityDeltaPerTick(execution!.taskId) > 0
+    activeSocialPartner !== undefined && (companionshipAffinityDeltaPerTick(execution!.taskId) > 0 || execution!.taskId === "eatAtFoodStation")
       ? canonicalPairId(colonist.identity.id, activeSocialPartner)
       : undefined;
   const atrophyResult = applyAtrophy(relationships, deltaTicks, activeSocialPair);
@@ -515,9 +537,36 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     const progressed = progressExecution(execution, deltaTicks);
     events.push({ kind: "executionProgressed", taskId: progressed.taskId, elapsedTicks: progressed.elapsedTicks });
 
+    const worldBeforeProgress = world;
     const consequences = applyProgressConsequences(progressed.taskId, colonist.needs, world, deltaTicks, traits);
     if (consequences.needs !== undefined) colonist = withNeeds(colonist, consequences.needs);
     if (consequences.world !== undefined) world = consequences.world;
+
+    const consumedFood =
+      progressed.taskId === "eatAtFoodStation" && consequences.world !== undefined ? worldBeforeProgress.foodStock - consequences.world.foodStock : 0;
+    if (activeSharedMealPartner !== undefined && consumedFood > 0) {
+      // Copilot-confirmed defect: scale by the same restorationFraction the Hunger consequence
+      // uses (execution.ts:125-136) — a final tick that consumes only a fraction of
+      // foodConsumptionPerTick must not grant the full per-tick Social/affinity credit.
+      const fullFoodConsumption = TASK_TUNING.foodConsumptionPerTick * deltaTicks;
+      const sharedMealFraction = fullFoodConsumption > 0 ? consumedFood / fullFoodConsumption : 0;
+      colonist = withNeeds(
+        colonist,
+        restoreNeedByAmount(colonist.needs, "social", TASK_TUNING.sharedMealSocialRestorePerTick * deltaTicks * sharedMealFraction, traits),
+      );
+      const interaction = applyInteraction(relationships, {
+        colonistAId: colonist.identity.id,
+        colonistBId: activeSharedMealPartner,
+        tick: clock.tick,
+        changeSource: "sharedTaskCompletion",
+        initiatorId: colonist.identity.id,
+        responderId: activeSharedMealPartner,
+        aTowardBDelta: TASK_TUNING.sharedMealAffinityDeltaPerTick * deltaTicks * sharedMealFraction,
+        bTowardADelta: 0,
+      });
+      relationships = interaction.store;
+      relationshipConsequences.push(...interaction.consequences);
+    }
 
     const relatedColonistId = colonist.currentGoal?.relatedColonistId;
     const socialRestorePerTick = socialNeedRestorePerTick(progressed.taskId);

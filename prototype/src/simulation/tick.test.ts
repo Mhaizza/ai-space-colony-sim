@@ -81,6 +81,24 @@ function socialExecutionState(taskId: "conversation" | "sharedDowntime", related
   };
 }
 
+function eatingExecutionState(
+  roster = [zeke],
+  relationships = createRelationshipStore(),
+  world = createWorld(),
+): SimulationState {
+  const base = stateAtTickOfDay(0, { hunger: { level: 0.35, ticksBelowLow: 10 }, social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, 13);
+  const goal = commitGoal({ source: "criticalNeed", tier: 1, key: "criticalNeed:hunger", baseUrgency: 1, relatedNeed: "hunger" }, "test hunger", base.clock.tick);
+  return {
+    ...base,
+    colonist: withCurrentGoal(base.colonist, goal),
+    execution: beginExecution(taskDefinition("eatAtFoodStation"), goal, base.clock.tick),
+    hasBootstrapped: true,
+    relationships,
+    roster,
+    world,
+  };
+}
+
 describe("fixed-step enforcement (review fix 2)", () => {
   it("rejects a delta larger than BASE_TICKS_PER_STEP", () => {
     const state = stateAtTickOfDay(0);
@@ -244,6 +262,129 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
 
     expect(() => validateSimulationState(state)).toThrow(/must not target the primary colonist/);
     expect(() => tick(state, 1)).toThrow(/must not target the primary colonist/);
+  });
+});
+
+describe("shared meal overlay (Stage 2 Slice 4)", () => {
+  it("eating with non-hostile company also restores Social and applies positive relationship drift", () => {
+    const initial = eatingExecutionState();
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.hunger.level).toBeGreaterThan(initial.colonist.needs.hunger.level);
+    expect(final.colonist.needs.social.level).toBeGreaterThan(initial.colonist.needs.social.level);
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeGreaterThan(0);
+    expect(perspective(final.relationships, "zeke", "c1").affinity).toBe(0);
+  });
+
+  it("eating alone keeps the pre-existing hunger behavior without Social or relationship overlay", () => {
+    const initial = eatingExecutionState([]);
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.hunger.level).toBeGreaterThan(initial.colonist.needs.hunger.level);
+    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+    expect(final.relationships).toEqual(createRelationshipStore());
+  });
+
+  it("does not apply the overlay for hostile company", () => {
+    const hostile = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: -80,
+      bTowardADelta: 0,
+    }).store;
+    const final = run(eatingExecutionState([zeke], hostile), 20).finalState;
+
+    expect(final.colonist.needs.social.level).toBeLessThan(eatingExecutionState([zeke], hostile).colonist.needs.social.level);
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeLessThan(0);
+  });
+
+  it("sharedMeal remains an overlay, not a directly adopted voluntary task", () => {
+    const freeStart = policy.workTicks + policy.restTicks;
+    const final = run({ ...stateAtTickOfDay(freeStart, {}, 31), roster: [zeke] }, 1).finalState;
+
+    expect(final.execution?.taskId).not.toBe("sharedMeal");
+  });
+
+  it("preserves replay and save/load determinism", () => {
+    const initial = eatingExecutionState();
+    const final = run(initial, 50).finalState;
+    const reloaded = deserialize(serialize(final));
+
+    expect(verifyReplay(initial, final).kind).toBe("match");
+    expect(reloaded.colonist.needs.social).toEqual(final.colonist.needs.social);
+    expect(reloaded.relationships).toEqual(final.relationships);
+  });
+
+  it("never credits Purpose — Purpose decays identically with or without shared-meal company", () => {
+    // Purpose still decays passively regardless of the overlay (that's ordinary need decay, not
+    // an overlay effect) — isolate the overlay's contribution by comparing against a solo baseline
+    // that experiences the same decay but none of the overlay's Social/affinity crediting.
+    const withCompany = run(eatingExecutionState([zeke]), 20).finalState;
+    const alone = run(eatingExecutionState([]), 20).finalState;
+
+    expect(withCompany.colonist.needs.purpose.level).toBe(alone.colonist.needs.purpose.level);
+  });
+
+  it("scales Social credit and affinity drift to the fraction of food actually consumed (Copilot review fix)", () => {
+    const scantStock = { ...createWorld(), foodStock: TASK_TUNING.foodConsumptionPerTick / 2 };
+    const initial = eatingExecutionState([zeke], createRelationshipStore(), scantStock);
+    const fullInitial = eatingExecutionState();
+    const final = tick(initial, 1).state;
+    const fullFinal = tick(fullInitial, 1).state;
+
+    const partialSocialGain = final.colonist.needs.social.level - initial.colonist.needs.social.level;
+    const fullSocialGain = fullFinal.colonist.needs.social.level - fullInitial.colonist.needs.social.level;
+    expect(partialSocialGain).toBeGreaterThan(0);
+    expect(partialSocialGain).toBeLessThan(fullSocialGain);
+
+    const partialAffinity = perspective(final.relationships, "c1", "zeke").affinity;
+    const fullAffinity = perspective(fullFinal.relationships, "c1", "zeke").affinity;
+    expect(partialAffinity).toBeGreaterThan(0);
+    expect(partialAffinity).toBeLessThan(fullAffinity);
+  });
+
+  it("does not exempt the pair from atrophy when food stock is already depleted (Copilot review fix)", () => {
+    // A prior interaction pushes affinity up so atrophy (which pulls back toward 0) is observable.
+    const withAffinity = applyInteraction(createRelationshipStore(), {
+      colonistAId: "c1",
+      colonistBId: "zeke",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "c1",
+      responderId: "zeke",
+      aTowardBDelta: 10,
+      bTowardADelta: 0,
+    }).store;
+    const depleted = { ...createWorld(), foodStock: 0 };
+    const initial = eatingExecutionState([zeke], withAffinity, depleted);
+    const final = tick(initial, 1).state;
+
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeLessThan(perspective(withAffinity, "c1", "zeke").affinity);
+  });
+
+  it("does not apply the overlay when only the partner's perspective is hostile (Codex review fix)", () => {
+    // zeke -> c1 is hostile; c1 -> zeke stays neutral — an asymmetric relationship state.
+    const asymmetric = applyInteraction(createRelationshipStore(), {
+      colonistAId: "zeke",
+      colonistBId: "c1",
+      tick: 0,
+      changeSource: "sharedTaskCompletion",
+      initiatorId: "zeke",
+      responderId: "c1",
+      aTowardBDelta: -80,
+      bTowardADelta: 0,
+    }).store;
+    const initial = eatingExecutionState([zeke], asymmetric);
+    const final = run(initial, 20).finalState;
+
+    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+    // Sole positive mover on this pair is the overlay's affinityDelta — its absence means the
+    // pair's affinity can only have gone down (ordinary atrophy) or stayed flat, never up.
+    expect(perspective(final.relationships, "c1", "zeke").affinity).toBeLessThanOrEqual(0);
   });
 });
 

@@ -137,6 +137,10 @@ export const TASK_TUNING = {
   conversationAffinityDeltaPerTick: 0.05,
   /** provisional — directional affinity drift per tick from Shared Downtime; intentionally no stronger than Conversation. */
   sharedDowntimeAffinityDeltaPerTick: 0.03,
+  /** provisional — Social need restored per tick when eating with non-hostile company (ADR-18 D3). */
+  sharedMealSocialRestorePerTick: 0.002,
+  /** provisional — directional affinity drift per tick from Shared Meal; intentionally low positive. */
+  sharedMealAffinityDeltaPerTick: 0.03,
 } as const;
 
 /** Memory calibration (all provisional — DQ-M1). */
