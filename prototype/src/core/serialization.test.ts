@@ -141,6 +141,77 @@ describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)
   });
 });
 
+describe("social offer store round-trip and validation (Stage 2 Slice 5, ADR-21 D5)", () => {
+  const zeke: ColonistIdentity = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] };
+
+  function savedWithOffer(offer: Record<string, unknown>, nextOfferSequence = 1): RawSave {
+    const state = createInitialState(7, "c1", "Maya", [], [], [zeke]);
+    const saved: RawSave = JSON.parse(serialize({ ...state, clock: { ...state.clock, tick: 100 } }));
+    saved.socialOffers = { offers: [offer], nextOfferSequence };
+    return saved;
+  }
+
+  const pendingOffer = {
+    id: 0,
+    initiatorId: "c1",
+    responderId: "zeke",
+    action: "conversation",
+    createdAtTick: 10,
+    respondableAtTick: 11,
+    expiresAtTick: 14,
+    status: "pending",
+    resolvedAtTick: null,
+    reason: null,
+  };
+
+  it("round-trips a pending social offer without recomputing its ticks or reason", () => {
+    const saved = savedWithOffer(pendingOffer);
+    const reloaded = deserialize(JSON.stringify(saved));
+    expect(reloaded.socialOffers.offers).toEqual([pendingOffer]);
+    expect(reloaded.socialOffers.nextOfferSequence).toBe(1);
+  });
+
+  it("round-trips every terminal status", () => {
+    for (const [status, reason] of [
+      ["accepted", null],
+      ["declined", "acceptanceDraw"],
+      ["cancelled", "initiatorUnavailable"],
+      ["expired", "timeout"],
+    ] as const) {
+      const saved = savedWithOffer({ ...pendingOffer, status, resolvedAtTick: 12, reason });
+      const reloaded = deserialize(JSON.stringify(saved));
+      expect(reloaded.socialOffers.offers[0]!.status).toBe(status);
+      expect(reloaded.socialOffers.offers[0]!.reason).toBe(reason);
+    }
+  });
+
+  it("rejects unknown reason codes", () => {
+    expect(() =>
+      deserialize(JSON.stringify(savedWithOffer({ ...pendingOffer, status: "declined", resolvedAtTick: 12, reason: "she said no" }))),
+    ).toThrow(/reason/);
+  });
+
+  it("rejects accepted offers carrying a reason (validity matrix)", () => {
+    expect(() =>
+      deserialize(JSON.stringify(savedWithOffer({ ...pendingOffer, status: "accepted", resolvedAtTick: 12, reason: "acceptanceDraw" }))),
+    ).toThrow(/accepted/);
+  });
+
+  it("rejects an offer referencing an unknown colonist id", () => {
+    expect(() => deserialize(JSON.stringify(savedWithOffer({ ...pendingOffer, responderId: "ghost" })))).toThrow(/unknown colonist/);
+  });
+
+  it("rejects a counter at or below the highest stored id", () => {
+    expect(() => deserialize(JSON.stringify(savedWithOffer(pendingOffer, 0)))).toThrow(/nextOfferSequence/);
+  });
+
+  it("rejects a missing socialOffers slice outright (no repair to an empty store)", () => {
+    const saved = savedWithOffer(pendingOffer);
+    delete saved.socialOffers;
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/socialOffers/);
+  });
+});
+
 describe("deterministic replay after save/load", () => {
   it("save mid-execution and continue identically to an uninterrupted run", () => {
     const initial = createInitialState(42, "c1", "Maya", ["engineering"]);

@@ -308,6 +308,48 @@ describe("terminal-state verification (final review fix)", () => {
   });
 });
 
+describe("socialOffers terminal-state verification (Stage 2 Slice 5, ADR-21 D6)", () => {
+  it("reports the first socialOffers divergence path when the offer store is tampered", () => {
+    const { initial, final } = completedRun(1, 10);
+    const tampered: SimulationState = {
+      ...final,
+      socialOffers: {
+        offers: [
+          {
+            id: 0,
+            initiatorId: "c1",
+            responderId: "zeke",
+            action: "conversation",
+            createdAtTick: 1,
+            respondableAtTick: 2,
+            expiresAtTick: 5,
+            status: "pending",
+            resolvedAtTick: null,
+            reason: null,
+          },
+        ],
+        nextOfferSequence: 1,
+      },
+    };
+    const result = verifyReplay(initial, tampered);
+    expect(result.kind).toBe("divergence");
+    if (result.kind === "divergence") {
+      expect(result.log).toBe("state");
+      expect(result.path).toMatch(/^socialOffers\./);
+    }
+  });
+
+  it("a tampered counter alone is caught", () => {
+    const { initial, final } = completedRun(1, 10);
+    const tampered: SimulationState = { ...final, socialOffers: { ...final.socialOffers, nextOfferSequence: 99 } };
+    const result = verifyReplay(initial, tampered);
+    expect(result.kind).toBe("divergence");
+    if (result.kind === "divergence") {
+      expect(result.path).toBe("socialOffers.nextOfferSequence");
+    }
+  });
+});
+
 describe("diverging seeds", () => {
   it("replaying retained records against a different seed's initial state diverges — deterministically, not flakily", () => {
     const { final } = completedRun(1, 300);
