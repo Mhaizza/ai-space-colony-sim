@@ -116,14 +116,22 @@ export interface SimulationState {
    * ADR-22 D1: the one authoritative colonist list — a canonically ordered (ordinal id order)
    * collection of per-colonist runtime containers, replacing the former singular
    * `colonist`/`execution`/`suspendedExecution`/baseline slots AND the identity-only `roster`.
-   *
-   * ponytail: 6a transitional semantics — tick() simulates ONLY the canonically-first entry
-   * (`colonists[0]`); the remaining entries are carried through untouched and observed via the
-   * same fixed `"resting"` placeholder the retired roster used, preserving pre-migration
-   * behavior bit-identically. Sub-slice 6b replaces this with the design's D2/D3 full loop
-   * (all entries simulated, real observation basis) — that is the 6a→6b diff, by design.
+   * Canonical order is a STORAGE property only (ADR-22 D1/D4) — it says nothing about which
+   * colonist tick() simulates. See `activeColonistId` below for that.
    */
   readonly colonists: readonly ColonistRuntime[];
+  /**
+   * ponytail: 6a transitional field — identifies which `colonists` entry tick() simulates, BY
+   * ID, never by array position. Review fix (PR #132): the collection's canonical ordering is
+   * an id-sort with no relationship to caller intent, so `colonists[0]` could silently become a
+   * roster entry whose id happens to sort before the intended primary colonist's — this field
+   * is what makes the simulated colonist a stable, explicit choice instead of an ordering
+   * accident. Every entry other than the one this names is carried through untouched and
+   * observed via the same fixed `"resting"` placeholder the retired roster used, preserving
+   * pre-migration behavior bit-identically. Sub-slice 6b removes this field entirely — once all
+   * entries are simulated (the design's D2/D3 full loop), "which one is active" is moot.
+   */
+  readonly activeColonistId: string;
   readonly prng: PrngState;
   /**
    * Whether tick() has ever run for this state before (review fix, cross-referenced Copilot
@@ -241,6 +249,14 @@ export function validateSimulationState(state: SimulationState): void {
     previousId = id;
   }
   const knownIds = new Set(state.colonists.map((r) => r.colonist.identity.id));
+
+  // Review fix (PR #132): activeColonistId must name a real collection member — tick.ts's
+  // colonist-selection-by-id (not by position) depends on this always resolving.
+  if (!knownIds.has(state.activeColonistId)) {
+    throw new Error(
+      `Invalid SimulationState: activeColonistId "${state.activeColonistId}" is not present in the colonist collection.`,
+    );
+  }
 
   for (const runtime of state.colonists) {
     validateColonistRuntime(runtime, knownIds, state.socialOffers);
@@ -541,14 +557,27 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   }
   validateSimulationState(state); // input boundary — reject malformed state before processing it
 
-  // ponytail: 6a transitional — exactly ONE colonist is simulated: the canonically-first entry
-  // (which, for every state this migration step produces, is the same colonist the singular
-  // slots used to hold). The remaining entries are carried through untouched and observed via
-  // the same fixed "resting" placeholder the retired roster used, preserving pre-migration
-  // behavior bit-identically. Sub-slice 6b replaces this with the design's D2/D3 full loop.
-  const active = state.colonists[0]!; // validate guarantees non-empty
-  const restRuntimes = state.colonists.slice(1);
-  const restIdentities = restRuntimes.map((r) => r.colonist.identity);
+  // ponytail: 6a transitional — exactly ONE colonist is simulated: the entry named by
+  // activeColonistId, selected BY ID (never by array position — review fix, PR #132: canonical
+  // storage order has no relationship to which colonist the caller intended to simulate). The
+  // remaining entries are carried through untouched and observed via the same fixed "resting"
+  // placeholder the retired roster used, preserving pre-migration behavior bit-identically.
+  // Sub-slice 6b replaces this with the design's D2/D3 full loop.
+  const active = state.colonists.find((r) => r.colonist.identity.id === state.activeColonistId)!; // validate guarantees this resolves
+  const restIdentities = state.colonists.filter((r) => r.colonist.identity.id !== state.activeColonistId).map((r) => r.colonist.identity);
+
+  /**
+   * Rebuilds the collection with the active entry replaced, at its ORIGINAL canonical position
+   * — never reordered to the front. Every other entry is passed through by identity (same
+   * reference), matching the pre-fix "carried untouched" behavior exactly.
+   */
+  const withUpdatedActive = (
+    updated: Pick<
+      ColonistRuntime,
+      "colonist" | "execution" | "suspendedExecution" | "deprivationBaselines" | "stressBaseline" | "relationshipAffinityBaselines"
+    >,
+  ): readonly ColonistRuntime[] =>
+    state.colonists.map((r) => (r.colonist.identity.id === state.activeColonistId ? updated : r));
 
   const events: TickEvent[] = [];
 
@@ -922,7 +951,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy,
-        colonists: [{ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }, ...restRuntimes],
+        colonists: withUpdatedActive({ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }), activeColonistId: state.activeColonistId,
         prng, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, socialOffers,
       },
       events,
@@ -944,7 +973,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     return finish(
       {
         clock, world, policy: state.policy,
-        colonists: [{ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }, ...restRuntimes],
+        colonists: withUpdatedActive({ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }), activeColonistId: state.activeColonistId,
         prng, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, socialOffers,
       },
       events,
@@ -1034,7 +1063,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   return finish(
     {
       clock, world, policy: state.policy,
-      colonists: [{ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }, ...restRuntimes],
+      colonists: withUpdatedActive({ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }), activeColonistId: state.activeColonistId,
       prng, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, socialOffers,
     },
     events,

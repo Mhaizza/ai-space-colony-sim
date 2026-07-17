@@ -37,6 +37,11 @@ export function createInitialState(
   // parameter is preserved for callers, but each entry now becomes a full (inert) runtime
   // container — fresh colonist state, no execution, fresh baselines. ponytail: 6a keeps these
   // entries unsimulated (tick.ts's transitional single-active rule); 6b promotes them.
+  //
+  // Review fix (PR #132): sorting into canonical order is a STORAGE requirement (ADR-22 D1)
+  // independent of which colonist the caller means to simulate — `colonistId` is that explicit
+  // choice, carried separately as `activeColonistId` so it never depends on where it lands in
+  // the sorted array (a roster id could sort before it).
   const runtimes: ColonistRuntime[] = [
     freshRuntime(createColonist(colonistId, colonistName, skills, baseTraits)),
     ...roster.map((entry) => freshRuntime(createColonist(entry.id, entry.name, entry.skills, entry.baseTraits))),
@@ -46,6 +51,7 @@ export function createInitialState(
     world: createWorld(),
     policy: createDefaultPolicy(),
     colonists: runtimes,
+    activeColonistId: colonistId,
     prng: createPrng(seed),
     hasBootstrapped: false,
     eventLog: createEventLog(),

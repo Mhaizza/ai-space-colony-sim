@@ -677,6 +677,7 @@ export function serialize(state: SimulationState): string {
     world: state.world,
     policy: state.policy,
     colonists: state.colonists, // ADR-22 D3: serialized in stored (canonical) order; already JSON-safe
+    activeColonistId: state.activeColonistId, // ponytail: 6a transitional field (review fix, PR #132) — see tick.ts's SimulationState doc
     prng: state.prng,
     hasBootstrapped: state.hasBootstrapped,
     eventLog: state.eventLog,
@@ -719,6 +720,9 @@ export function deserialize(json: string): SimulationState {
     world: readWorld(o.world),
     policy: readPolicy(o.policy),
     colonists,
+    // ponytail: 6a transitional field — validated as a real member of the loaded collection by
+    // validateSimulationState below, not re-derived here (single cross-field check, one place).
+    activeColonistId: expectString(o.activeColonistId, "activeColonistId"),
     prng: deserializePrng(JSON.stringify(o.prng)),
     hasBootstrapped: expectBoolean(o.hasBootstrapped, "hasBootstrapped"),
     eventLog: readEventLog(o.eventLog),

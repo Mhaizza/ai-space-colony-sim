@@ -37,6 +37,7 @@ function stateAtTickOfDay(
     clock: advance(createClock(), tickOfDay),
     world: createWorld(),
     policy,
+    activeColonistId: "c1",
     colonists: [{ colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() }],
     prng: createPrng(seed),
     hasBootstrapped: false, // a freshly-built colonist with no goal/execution — genuinely never decided
@@ -759,6 +760,7 @@ describe("goal interruption and resume — preserved execution progress (review 
       clock: advance(createClock(), restPeriodTick),
       world: brokenWorld,
       policy,
+      activeColonistId: "c1",
       colonists: [{ colonist: colonist, execution: null, suspendedExecution: suspendedExecution, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
@@ -821,6 +823,7 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       clock: advance(createClock(), policy.workTicks + policy.restTicks),
       world: createWorld(),
       policy,
+      activeColonistId: "c1",
       colonists: [{ colonist: colonist, execution: hungerExecution, suspendedExecution: voluntaryExecution, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
@@ -1271,6 +1274,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       clock: advance(createClock(), policy.workTicks + policy.restTicks),
       world: createWorld(),
       policy,
+      activeColonistId: "c1",
       colonists: [{ colonist: overflowColonist, execution: hungerExec, suspendedExecution: voluntaryExec, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
@@ -1308,6 +1312,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       clock: createClock(),
       world: createWorld(),
       policy,
+      activeColonistId: "c1",
       colonists: [{ colonist: colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
       hasBootstrapped: false,
@@ -1345,6 +1350,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       clock: createClock(),
       world: createWorld(),
       policy,
+      activeColonistId: "c1",
       colonists: [{ colonist: colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
       hasBootstrapped: false,
@@ -1385,7 +1391,7 @@ describe("colonist collection invariants (Stage 2 Slice 6a, ADR-22 D1/D4)", () =
   const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
   const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
 
-  it("inert non-first entries survive a real tick unchanged — 6a simulates only the canonically-first colonist", () => {
+  it("inert non-active entries survive a real tick unchanged — 6a simulates only activeColonistId, not position", () => {
     const state = withOthers(stateAtTickOfDay(0), [yara, zeke]);
     const result = tick(state, 1);
     expect(result.state.colonists.length).toBe(3);
@@ -1393,6 +1399,34 @@ describe("colonist collection invariants (Stage 2 Slice 6a, ADR-22 D1/D4)", () =
     expect(result.state.colonists[1]).toBe(state.colonists[1]);
     expect(result.state.colonists[2]).toBe(state.colonists[2]);
     expect(result.state.colonists.map((r) => r.colonist.identity.id)).toEqual(["c1", "yara", "zeke"]);
+  });
+
+  it("REGRESSION (ChatGPT Final Review, PR #132): a lexicographically smaller roster id does not take over as the active simulated colonist", () => {
+    // "aaron" sorts before "c1" — canonical (id-ordered) storage puts it at colonists[0]. Before
+    // this fix, tick.ts selected colonists[0] as the simulated colonist, which would have made
+    // "aaron" (an inert roster member with no goal) the active one instead of "c1", silently
+    // starving c1's bootstrap/decision pipeline. Selection must be by activeColonistId, not index.
+    const aaron = { id: "aaron", name: "Aaron", skills: [], baseTraits: [] } as const;
+    const state = withOthers(stateAtTickOfDay(0), [aaron]); // free time by default at tickOfDay(0)? use work period to force a real decision
+    expect(state.colonists.map((r) => r.colonist.identity.id)).toEqual(["aaron", "c1"]); // sanity: aaron really does sort first
+    expect(state.activeColonistId).toBe("c1");
+
+    const result = tick(state, 1);
+
+    // c1 is the one that bootstrapped and adopted a goal/execution — the pre-migration behavior.
+    const c1After = result.state.colonists.find((r) => r.colonist.identity.id === "c1")!;
+    expect(result.events.some((e) => e.kind === "bootstrap")).toBe(true);
+    expect(c1After.colonist.currentGoal).not.toBeNull();
+
+    // aaron is untouched — carried through by reference, never simulated, no goal ever adopted.
+    const aaronBefore = state.colonists.find((r) => r.colonist.identity.id === "aaron")!;
+    const aaronAfter = result.state.colonists.find((r) => r.colonist.identity.id === "aaron")!;
+    expect(aaronAfter).toBe(aaronBefore);
+    expect(aaronAfter.colonist.currentGoal).toBeNull();
+
+    // Collection order is preserved (aaron still first) even though c1, not aaron, was active.
+    expect(result.state.colonists.map((r) => r.colonist.identity.id)).toEqual(["aaron", "c1"]);
+    expect(result.state.activeColonistId).toBe("c1");
   });
 
   it("validateSimulationState rejects duplicate colonist ids (out-of-order collection)", () => {
