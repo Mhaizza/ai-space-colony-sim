@@ -20,11 +20,11 @@ assignees: []
 
 ## In Scope
 
-- 
+-
 
 ## Out of Scope
 
-- 
+-
 
 ## Dependencies
 
@@ -38,7 +38,7 @@ assignees: []
 
 ## Risks
 
-- 
+-
 
 ## Acceptance Criteria
 
@@ -59,4 +59,4 @@ assignees: []
 
 ## Exact Next Step
 
-- 
+-

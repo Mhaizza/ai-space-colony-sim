@@ -1,7 +1,7 @@
 # AI Workflow Pack Adoption Design
 
-**Issue:** #136  
-**Status:** Approved for written-spec review  
+**Issue:** #136
+**Status:** Approved for written-spec review
 **Date:** 2026-07-18
 
 ## Goal
@@ -87,4 +87,3 @@ Out of scope: gameplay code, Issue #135, automatic approval, automatic merge, au
 5. Cursor addresses findings only if findings exist, followed by re-review.
 6. Human approves merge.
 7. Workflow Operator merges, posts Done, and closes #136.
-

@@ -12,15 +12,15 @@ assignees: []
 
 ## In Scope
 
-- 
+-
 
 ## Out of Scope
 
-- 
+-
 
 ## Dependencies
 
-- 
+-
 
 ## Authority
 
@@ -34,15 +34,15 @@ assignees: []
 
 ## Risks
 
-- 
+-
 
 ## Acceptance Criteria
 
-- 
+-
 
 ## Required Validation
 
-- 
+-
 
 ## Workflow Gates
 
@@ -53,4 +53,4 @@ assignees: []
 
 ## Exact Next Step
 
-- 
+-

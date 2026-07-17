@@ -12,15 +12,15 @@ assignees: []
 
 ## In Scope
 
-- 
+-
 
 ## Out of Scope
 
-- 
+-
 
 ## Dependencies
 
-- 
+-
 
 ## Authority
 
@@ -34,7 +34,7 @@ assignees: []
 
 ## Risks
 
-- 
+-
 
 ## Deliverables
 
@@ -60,4 +60,4 @@ assignees: []
 
 ## Exact Next Step
 
-- 
+-

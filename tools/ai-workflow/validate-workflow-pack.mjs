@@ -47,6 +47,9 @@ const TEMPLATE_RULES = Object.freeze([
   ["docs/ai-workflow/done-update-template.md", ["Card:", "Status: Done", "Completed:", "Changed Files:", "Validation:", "Pipeline Trail:", "Scope Delivered:", "Scope Not Delivered:", "Follow-up Tasks:", "Exact Next Step:"]],
 ]);
 
+const CONTACT_LINK_URL =
+  "https://github.com/Mhaizza/ai-space-colony-sim/blob/main/docs/ai-workflow/README.md";
+
 function finding(file, ruleId, message) {
   return { file, ruleId, message };
 }
@@ -55,6 +58,15 @@ function localMarkdownTargets(content) {
   return [...content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)]
     .map((match) => match[1].trim().split("#", 1)[0])
     .filter((target) => target && !/^(?:https?:|mailto:)/i.test(target));
+}
+
+function escapesRoot(root, resolved) {
+  const relative = path.relative(root, resolved);
+  return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+
+function contactLinkUrls(content) {
+  return [...content.matchAll(/^\s*url:\s*(.+?)\s*$/gm)].map((match) => match[1].trim());
 }
 
 export function validateWorkflowPack(rootDir) {
@@ -95,11 +107,42 @@ export function validateWorkflowPack(rootDir) {
     }
   }
 
+  const configContent = contents.get(".github/ISSUE_TEMPLATE/config.yml");
+  if (configContent !== undefined) {
+    const urls = contactLinkUrls(configContent);
+    checksRun += 1;
+    if (urls.length === 0) {
+      findings.push(finding(
+        ".github/ISSUE_TEMPLATE/config.yml",
+        "config.contact-link",
+        "Missing contact link URL",
+      ));
+    }
+    for (const url of urls) {
+      checksRun += 1;
+      if (url !== CONTACT_LINK_URL) {
+        findings.push(finding(
+          ".github/ISSUE_TEMPLATE/config.yml",
+          "config.contact-link",
+          `Contact link URL must be absolute canonical URL; got: ${url}`,
+        ));
+      }
+    }
+  }
+
   for (const [relativePath, content] of contents) {
     if (!relativePath.endsWith(".md")) continue;
     for (const target of localMarkdownTargets(content)) {
       checksRun += 1;
       const resolved = path.resolve(root, path.dirname(relativePath), target);
+      if (escapesRoot(root, resolved)) {
+        findings.push(finding(
+          relativePath,
+          "markdown.local-link",
+          `Local link target escapes workflow pack root: ${target}`,
+        ));
+        continue;
+      }
       if (!existsSync(resolved)) {
         findings.push(finding(relativePath, "markdown.local-link", `Local link target does not exist: ${target}`));
       }

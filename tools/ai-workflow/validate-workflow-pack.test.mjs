@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -92,6 +92,33 @@ test("reports a broken local Markdown link", () => {
       finding.file === "docs/README.md" &&
       finding.ruleId === "markdown.local-link" &&
       finding.message.includes("missing.md")
+    ));
+  });
+});
+
+test("rejects a local Markdown link that escapes the pack root", () => {
+  withFixture({ overrides: { "docs/README.md": "# Docs\n\n[Outside](../..)\n" } }, (root) => {
+    const escapedTarget = path.resolve(root, "docs", "../..");
+    assert.ok(existsSync(escapedTarget), "escaped parent path must exist so this is not a missing-file case");
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "docs/README.md" &&
+      finding.ruleId === "markdown.local-link" &&
+      finding.message.includes("../..")
+    ));
+  });
+});
+
+test("rejects a relative contact link URL in issue template config", () => {
+  withFixture({
+    overrides: {
+      ".github/ISSUE_TEMPLATE/config.yml":
+        "blank_issues_enabled: true\ncontact_links:\n  - name: AI Workflow Pack\n    url: ../docs/ai-workflow/README.md\n    about: Workflow entrypoint.\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === ".github/ISSUE_TEMPLATE/config.yml" &&
+      finding.ruleId === "config.contact-link" &&
+      finding.message.includes("../docs/ai-workflow/README.md")
     ));
   });
 });

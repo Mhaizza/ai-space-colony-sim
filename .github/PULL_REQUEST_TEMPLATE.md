@@ -1,6 +1,6 @@
 ## Summary
 
-- 
+-
 
 ## Scope
 
@@ -19,11 +19,11 @@
 
 ## Changes
 
-- 
+-
 
 ## Not Changed
 
-- 
+-
 
 ## Validation
 
@@ -33,7 +33,7 @@
 
 ## Risks / Notes
 
-- 
+-
 
 ## Workflow
 
