@@ -1,15 +1,15 @@
 # Engineering Specification — Colonist AI Simulation
 
-**Version:** 0.2.0 (engineering review 2026-07-10: Prototype Scope clarified — 24 colonists is the validation target, reached through a 1 → 3 → 8 → 24 progression; no architecture, module boundary, or update-order change)
+**Version:** 0.3.0 (reconciled 2026-07-17 against ADR-20 and the merged Stage 2 implementation through PR #118; no architecture contradiction found, no new ADR required)
 **Phase:** Phase 3 — Engineering Specification
-**Status:** Approved (engineering review 2026-07-10 — approved pending one clarification, now applied)
+**Status:** Approved (engineering review 2026-07-10), reconciled 2026-07-17 to match accepted ADR-20 and the current Stage 2 implementation boundary
 **Authority (treated as authoritative):** design/ai-behavior-specification.md v0.2.0 (Approved — the behavioral contract this document decomposes); design/phase-2-architecture-freeze.md v1.0.0; ADR-17, ADR-18 (Accepted); ADR-01–ADR-16 (Accepted); design/decision-loop.md v0.1.0 and the frozen Phase 2 set (colonist-agent-model v0.2.0, needs-system v0.2.0, personality-traits v0.1.0, goal-system v0.1.0, memory-system v0.2.0); ai-studio/constitution/architecture-philosophy.md
 **Scope:** The module decomposition, ownership map, interface contracts, ordering and event discipline, persistence boundaries, determinism requirements, debug surfaces, and prototype scope that make the approved behavioral architecture buildable.
 **This document is NOT implementation:** no code, no TypeScript, no pseudocode, no formulas, no data-structure definitions, no file layouts. Modules are named responsibilities with contracts; how each is realized is implementation work under these constraints.
 
 **Traceability rule:** every module and contract traces to its authorizing source in brackets.
 
-**Contradiction report:** none found. The full decomposition below was checked against the freeze's 30 locked decisions, ADR-17/18, and the behavior specification's twelve invariants; no architecture contradiction appeared. **One open architecture question is inherited, not created: AQ-2 (relationship record storage)** — per the freeze (entry condition 2) it gates relationship *implementation* only. This document specifies the Relationship module's responsibilities and interface without committing a storage model, and marks AQ-2 as that module's blocking gate (§13). This is a report of standing state, not a silent resolution.
+**Contradiction report:** none found. The full decomposition below was re-checked on 2026-07-17 against the freeze's 30 locked decisions, ADR-17, ADR-18, ADR-20, and the behavior specification's twelve invariants; no architecture contradiction appeared. ADR-20 resolved AQ-2 in favor of centralized per-pair M10 storage with directional perspectives, and the current implementation matches that decision. The remaining gap is implementation scope, not architecture: the prototype still runs one fully simulated colonist plus an identity-only roster, so explicit social offer/response handling and an autonomous three-colonist runtime remain future work under the existing architecture.
 
 ---
 
@@ -28,7 +28,7 @@ Twelve simulation modules plus three cross-cutting services. The decomposition f
 | M7 | **Stress System** | Colonist-attached | decision-loop §7; locked #27 |
 | M8 | **Trait System** (definitions, modifiers, discovery) | Colonist-attached | ADR-10; personality-traits |
 | M9 | **Memory System** (pool, formation, influence, eviction) | Colonist-attached | ADR-16; memory-system; locked #18–20 |
-| M10 | **Relationship System** | Colonist-adjacent (storage: AQ-2 open) | ADR-12; AQ-2 per freeze §6 |
+| M10 | **Relationship System** | Colonist-adjacent (centralized per-pair storage with directional perspectives) | ADR-12; ADR-20 |
 | M11 | **Decision System** (goal generation, filter, weights, selection, commitment, task resolution) | Colonist-attached | decision-loop §2–§6, §10; goal-system; behavior-spec §3.6–3.11 |
 | M12 | **Task & Execution System** (task classes, availability, execution into ambient states; social offer/encounter protocol) | World + colonist boundary | decision-loop §5; ADR-18; ADR-05 |
 | S1 | **Seeded PRNG Service** | Cross-cutting | Principle 7; locked #24 |
@@ -57,7 +57,7 @@ The player-facing presentation layer (rendering, inspector UI, overlays, hover) 
 
 **M9 Memory System** — One bounded pool per colonist; involuntary formation on ADR-16's significance criteria with impact fixed at formation; influence weight as recency × impact (referenced, not redefined); eviction by lowest influence; the four-type classification of influence surfaces [ADR-16; locked #18–19]. Serves match-and-tilt queries to M11 (person / resource-kind / situation-kind) [decision-loop §8] and the crisis-memory input to M6's Safety conditions [ADR-17 D8–D9]. Maintains **no write path to or from the event log** [locked #5].
 
-**M10 Relationship System** — Owns affinity scores, named-state derivation, bounded significant-interaction history, and the change-source table [ADR-12]; applies ADR-18's action consequences through that table only [ADR-18 D6]; serves relationship weight contributions and destination-context weights to M11/M12, and proximity stress inputs to M7. **Storage model (colonist-owned directional vs. centralized per-pair) is AQ-2 — open.** This module's interface contracts (§4) are written to be satisfiable by either resolution; implementation of M10 is blocked until AQ-2 is resolved [freeze entry condition 2].
+**M10 Relationship System** — Owns affinity scores, named-state derivation, bounded significant-interaction history, and the change-source table [ADR-12]; applies ADR-18's action consequences through that table only [ADR-18 D6]; serves relationship weight contributions and destination-context weights to M11/M12, and proximity stress inputs to M7. ADR-20 resolves storage to **one centralized sparse record per materialized colonist pair, with two explicit directional perspectives inside that record**. Colonist-facing reads stay directional (`perspective`); system-level pair reads stay restricted to M10 rules, encounter checks, serialization, replay, and inspection [ADR-20 D1-D8].
 
 **M11 Decision System** — Runs the decision at each triggered decision point: candidate generation from the five closed sources; ADR-01 priority filtering with actionability, fall-through, and Blocked-state entry; weight composition (base + four families under the five constraints, with retained per-family contributions); seeded-stochastic selection with deterministic tie-break; goal commitment with motivation recording; goal-stack management (suspend/re-decide, blocked persistence, stale-queue abandonment); task resolution via eligibility ∩ availability with weighted task choice [decision-loop §2–§6, §10; goal-system; locked #15–17, #23–26; behavior-spec §3.6–3.11].
 
@@ -85,7 +85,7 @@ One owner per datum; everything else reads through interfaces (§4). This table 
 | Trait definitions | M8 | |
 | Per-colonist traits, modifiers, discovery states | M5 holds; M8 owns rules | Discovery-state location beyond single-profile play: agent-model DQ-4, engineering-deferred |
 | Memory pool entries, influence weights | M5 holds; M9 owns rules | Event log never feeds or reads the pool [locked #5] |
-| Affinity scores, relationship states, interaction history | **M10 — residence pending AQ-2** | Conceptual model is colonist-owned perspective [frozen]; storage open |
+| Affinity scores, relationship states, interaction history | **M10** | Stored once per materialized pair; colonist-facing reads remain owner-direction only [ADR-20] |
 | Goal stack, recorded motivations | M5 holds; M11 owns rules | |
 | Task classes, requirements, availability | M12 | |
 | Observable behavioral state (Tier-1 facts) | M12's registry | The single source for both M4 and UI [locked #21] |
@@ -104,7 +104,7 @@ Contracts, not signatures. Each is named, directional, and constraint-bearing:
 5. **Stress feed** (M7 → M11, M12): current stress against trait-set thresholds (weight family input, acceptance suppression, capacity suppression), always with source attribution available [locked #27].
 6. **Trait contribution** (M8 → M11; M8 → M6/M7): weight tilts keyed on candidate class/context; bounded rate/threshold modifiers. Constraint: bound-never-veto; category-preserving (no psychological critical threshold) [locked #25; ADR-17 D7].
 7. **Memory match** (M9 → M11; M9 → M6-Safety): match-and-tilt by person/resource-kind/situation-kind proportional to influence weight; active crisis-memory input for Safety. Constraint: memory never adds or vetoes candidates; never touches rates/thresholds [decision-loop §8; ADR-17 D8].
-8. **Relationship context** (M10 → M11, M12, M7): candidate weights (tier 5 social gravity), destination-context task weights, refusal weights, proximity stress inputs — all within ADR-12's influence zones [decision-loop §9]. Constraint: contract must be storage-agnostic pending AQ-2.
+8. **Relationship context** (M10 → M11, M12, M7): candidate weights (tier 5 social gravity), destination-context task weights, refusal weights, proximity stress inputs — all within ADR-12's influence zones [decision-loop §9]. Constraint: decision-time consumers read owner-direction perspectives only; pair-level reads remain outside ordinary decision weighting except where ADR-20 explicitly allows them.
 9. **Eligibility intersection** (M5-skills × M3-permissions × M12-requirements → M11): three independently-owned inputs; no party writes another's side [locked #2, #26].
 10. **Commitment** (M11 → M12): adopted goal + resolved task; M12 executes. **Decision record** (M11 → S2): significant decisions with full decomposition [ADR-14].
 11. **Execution outcomes** (M12 → M2 world effects; → M6 satisfaction-condition facts; → M7 stress events; → M9 formation-significance events; → M10 affinity events; → S2 event log): consequences fan out to owners; each owner applies its own rules. Constraint: outcomes are facts; no outcome bypasses an owner's rules to write state directly.
@@ -118,7 +118,7 @@ The simulation advances in a **fixed, documented, deterministic order** — requ
 
 1. **Time advance** (M1) — the step's elapsed in-game duration, speed-scaled.
 2. **World evolution** (M2) — clock-rated processes: maintenance drift, resource flows, condition changes.
-3. **Colonist continuous state** (M6, M7 per colonist) — need decay, stress accumulation/dissipation, trait-modifier condition accounting (M8/M9 condition memories).
+3. **Colonist continuous state** (M6, M7 per colonist; M10 for materialized eligible pairs) — need decay, stress accumulation/dissipation, trait-modifier condition accounting (M8/M9 condition memories), and deterministic relationship atrophy under ADR-20's pair-order rules.
 4. **Condition & trigger detection** (M6, M2, M12, S2) — threshold crossings, blockage, completions, shift-boundary conditions, encounter conjunctions, story/crisis detection.
 5. **Decisions** (M4 + M11, only for colonists with fired triggers) — snapshot, decide, commit. Colonists without triggers are skipped entirely [locked #23: between triggers, execution continues unconditionally].
 6. **Execution & consequences** (M12, then fan-out per interface 11) — actions advance; outcomes apply through their owners.
@@ -148,7 +148,7 @@ All events are condition-triggered [ADR-02; locked #23]. The flow discipline:
 - M2: all module health, resources, conduit states, active conditions, maintenance accounting.
 - M3: all policies at all scopes, pending changes with their application conditions.
 - M5 (per colonist): identity and skills; need levels; stress level **with per-source attribution**; behavioral state; goal stack **with recorded motivations and suspension states**; active trait modifiers and discovery states; memory pool **with per-entry impact and formation data sufficient to recompute influence weights**.
-- M10: all affinity scores, states, bounded histories (residence per AQ-2's eventual resolution).
+- M10: all affinity scores, states, bounded histories, and pair-level interaction recency (ADR-20's centralized per-pair store).
 - S1: **complete PRNG state** — mandatory; a save that cannot reproduce the next draw breaks replay [Principle 7].
 - S2: full event log; decision log with retained decompositions (scope per §13); story-accumulation and crisis-detection state.
 
@@ -188,11 +188,15 @@ The prototype is the calibration instrument for every value this document and it
 | Stage | Scale | What it is for |
 |---|---|---|
 | 1 | **1 colonist** | The smallest meaningful end-to-end loop — the first implementation slice: clock → world → needs/stress → triggers → snapshot → decision → task → execution → consequences → logs, for one colonist. Proves the pipeline, the determinism obligations (§8), and the replay harness (EQ-8) before anything scales |
-| 2 | **3 colonists** | First social surface: pairwise relationships, offers/responses, Tier-1 mutual perception, the first Relational memories — the smallest scale at which ADR-18's protocol and ADR-12's pair records are real |
+| 2 | **3 colonists** | First social surface: pairwise relationships, Tier-1 mutual perception, the first Relational memories, and companionship execution consequences. The current implementation has reached this stage only partially: one colonist is fully simulated, while other colonists are still identity-only roster entries rather than independent runtimes |
 | 3 | **8 colonists** | First colony texture: shift baseline readable against deviations, story-event accumulation per cluster [ADR-08], multi-pair social dynamics, early calibration passes on the value queue |
 | 4 | **24 colonists** | The validation target: every first-order target below must be validated at this scale and no smaller |
 
 Calibration recommendations from stages 1–3 are provisional; only stage 4 answers count against the deferred-question ledger, because the two scale-dependent assumptions (ambient legibility, pair-count efficiency) can invalidate earlier tunings [ADR-05; ADR-12; freeze §7].
+
+**Current Stage 2 runtime boundary (reconciled 2026-07-17):** the shipped prototype simulates exactly **one full ColonistState** (`clock → world → needs/stress → triggers → snapshot → decision → execution → consequences → logs`) plus an **identity-only roster** of other colonists used for relationship storage, snapshot visibility, inspector output, and companionship-target weighting. Relationships, relational memory formation, companionship effects, and the Shared Meal overlay are real. Explicit ADR-18 offer/response handling and independent needs/stress/memory/goal/execution state for roster members are **not** implemented yet.
+
+**Autonomous three-colonist runtime impact (identified by Issue #99, no new ADR required):** reaching the full Stage-2 three-colonist target requires broadening the singular `colonist` / `execution` / baseline slots into a stable, canonically ordered collection of per-colonist state, then running phases 3, 5, and 6 across that collection without changing §5's seven-phase semantics. This is an implementation expansion under the accepted architecture, not a module-boundary or authority change: M4 remains the only world-to-decision read path, M10 remains the sole relationship owner, M12 remains the task/execution owner, and same-tick decisions still must not observe each other through live state.
 
 **Must include (first-order validation targets, all validated at stage 4):**
 - The full decision pipeline (M4–M12) with all five needs, stress, traits (a provisional non-canonical trait set sufficient to exercise all four categories — DQ-T1 authoring happens here), memory, relationships, and the six social actions — because the calibration questions are interdependent [freeze §7: calibration interdependence] and cannot be answered on a partial pipeline.
@@ -214,7 +218,7 @@ This specification does not cover, and its approval authorizes no work on:
 - **UI/presentation design** — inspector layout, hover design, overlays, the stable-colony signal, player-facing vocabularies (DQ-N5, DQ-T5) [freeze §6 → UI design].
 - **Content authoring** — canonical traits (DQ-T1), concrete task lists (DQ-D4), station layouts, scenario design.
 - **ADR-19** (colonist arrival) — candidate ADR, not begun.
-- **Relationship implementation** — blocked on AQ-2 [freeze entry condition 2].
+- **Autonomous multi-colonist runtime beyond the current primary-colonist + identity-only roster boundary** — independent needs/stress/memory/goal/execution simulation for additional colonists remains future implementation work.
 - **Post-Phase-1-scope features** — larger colonies, multiple stations, colonist death/injury systems (health is not a need and not yet a system [needs-system]), modding, multiplayer, difficulty modes.
 - **Performance targets beyond determinism** — frame budgets and platform matters are implementation planning, constrained here only by "no behavioral effect."
 
@@ -224,7 +228,7 @@ Remaining engineering-facing risks only (behavioral risks stand in behavior-spec
 
 - **The choke-point modules become bottlenecks.** M4 (every decision) and S1 (every draw) are single points of correctness *by design* — the same centralization that enforces invariants concentrates performance and bug risk. *Mitigation: both have tiny, stable contracts; the replay harness catches correctness regressions; performance work may restructure internals freely under §5's behavior-identical rule.*
 - **Retention cost vs. decomposability** (carried from decision-loop Risk 2, now concrete): retaining full compositions for logged decisions at 24 colonists × re-decision frequency is the named trade. *Mitigation: the minimum binding scope is defined (§9); anything beyond it is optional.*
-- **AQ-2 late resolution ripples.** If AQ-2 resolves against whichever storage shape early code implicitly assumed, M10-adjacent work reworks. *Mitigation: §4.8's storage-agnostic contract; M10 implementation is formally blocked, and other modules touch relationships only through the contract.*
+- **Autonomous-runtime migration can accidentally introduce same-tick order bias.** Expanding from one simulated colonist to three independent simulated colonists is now an implementation problem, not an architecture question; the risk is silently letting a later colonist in phase 5 or 6 observe an earlier colonist's same-step decision or consequences through live state. *Mitigation: keep §5's seven-phase semantics binding, build snapshots before each colonist's decision from approved phase inputs only, and preserve fixed within-phase colonist ordering plus replay verification.*
 - **The tick realization drifts from the phase semantics.** Batching/parallelization is sanctioned, but each optimization is a chance to violate fixed-snapshot or ordering guarantees subtly. *Mitigation: the replay harness as a standing CI-class test; §8's obligations are testable, and must be tested continuously, not at milestones.*
 - **Prototype scope creep toward product.** A full-pipeline, 24-colonist prototype with a real inspector will look like a game; pressure to polish rather than answer the calibration queue will follow. *Mitigation: §10's must-include list is the exit criterion — the prototype is done when the deferred-question ledger has recommendations, not when it is fun.*
 
@@ -232,7 +236,7 @@ Remaining engineering-facing risks only (behavioral risks stand in behavior-spec
 
 | # | Question | Blocking? |
 |---|---|---|
-| EQ-1 | **AQ-2** — relationship record storage (colonist-owned directional vs. centralized per-pair) | Blocks M10 implementation only [freeze entry condition 2] |
+| EQ-1 | Autonomous three-colonist runtime migration: stable per-colonist state containers, within-phase iteration order, and consequence-commit discipline under §5's unchanged seven-phase semantics | Before the Stage 2 completion slice that promotes roster colonists into independent simulated agents |
 | EQ-2 | Deterministic ordering criteria: tie-breaks (DQ-D3) and colonist/trigger iteration orders | Before first decision-pipeline implementation |
 | EQ-3 | PRNG stream structure (single vs. per-colonist streams) and draw-attribution scheme | Before first stochastic code; must be documented and stable |
 | EQ-4 | Decomposition retention scope beyond the binding minimum (logged decisions) | Optimization-stage decision |
@@ -253,7 +257,7 @@ All *value* questions (rates, thresholds, magnitudes, bounds) remain with the pr
 | M4 Snapshot Service as the single world→decision read path | The perception invariants (fixity, Tier-1-only, no stage labels, spatial bounds) are enforceable at one choke point instead of trusted to every consumer — the cheapest structural enforcement of locked #4/#21/#22 | Each system reading world state directly under convention (invariants by discipline rather than by structure — the hidden-coupling failure architecture-philosophy forbids) |
 | M12 publishes one observable-state registry read by both M4 and the UI | "A colonist knows what the player can see" [locked #21] becomes true by construction when both read the same source | Separate agent-visible and player-visible state (symmetry by ongoing synchronization — drift guaranteed) |
 | Fixed seven-phase update order, normative in effect not mechanism | Determinism requires *an* order; freezing effect-order while freeing mechanism preserves decision-loop B3 (stages are not an algorithm) and leaves optimization room | Prescribed execution algorithm (violates B3); no normative order (replay guarantee unachievable) |
-| Storage-agnostic M10 contract; AQ-2 reported as the module's blocking gate | The freeze says AQ-2 gates implementation only; a contract satisfiable by either resolution lets everything except M10's internals proceed — and reporting keeps the openness visible instead of silently pre-empting the decision | Resolving AQ-2 here (outside this document's mandate — it is a named open architecture question owned by its own future decision); deferring M10's interface too (would block M11/M12/M7 design work needlessly) |
+| ADR-20 resolves M10 to centralized per-pair storage with directional reads | One authority and one atomic update boundary preserve directional behavior without duplicating pair facts; owner-direction reads keep the conceptual model intact at decision boundaries | Colonist-owned duplicate records (split authority, duplicated history, higher pair-count cost); hybrid split ownership (synchronization complexity without a new capability) |
 | Binding minimum retention: full decomposition for logged decisions | Locked #25's decomposability is unverifiable with less; the decision-loop already named this exact trade and this document fixes its floor | No floor (decomposability erodes under optimization pressure — decision-loop Risk 2); full retention mandate (a cost decision this document has no basis to force) |
 | Full-pipeline prototype, validated at 24 colonists | The freeze's calibration-interdependence risk means partial-pipeline answers are false answers; legibility and pair-count assumptions only test at scale | Staged *partial-pipeline* prototypes (each answers its questions against a fake surrounding system, then re-answers later); validating below 24 (invalidates the two scale-dependent validation targets) |
 | *(Review revision)* Staged scale progression 1 → 3 → 8 → 24; 24 is the validation target, not the first prototype size; the first slice is the smallest meaningful end-to-end loop | Engineering review 2026-07-10. Full pipeline ≠ full scale: the pipeline is end-to-end from stage 1 (one colonist proves the loop, determinism, and the replay harness cheaply); scale grows only after the loop works. Stages 1–3 tune provisionally; only stage-4 answers count against the ledger, preserving the scale-dependent validation commitment | Building at 24 first (debugging the pipeline and the scale simultaneously — maximum-cost first slice); treating stage 1–3 calibrations as final (the scale-dependent assumptions could invalidate them) |
@@ -262,27 +266,32 @@ All *value* questions (rates, thresholds, magnitudes, bounds) remain with the pr
 ## 15. Kanban Update
 
 **Card:** [Phase 3] Engineering Specification
-**Status:** Approved — engineering review 2026-07-10 approved with one clarification (prototype scale progression), now applied — v0.2.0
+**Status:** Approved — engineering review 2026-07-10 approved with one clarification; reconciled 2026-07-17 against ADR-20 and the merged Stage 2 implementation boundary — v0.3.0
 
 **Completed:**
 - ✅ design/engineering-specification.md — module decomposition (12 modules + 3 services, each traced to its authorizing sources); responsibilities; single-owner data ownership table; 14 directional interface contracts with binding constraints; fixed seven-phase update order (normative in effect, free in mechanism); condition-triggered event flow discipline; complete save/load boundary with replay-guarantee acceptance test; 8 determinism obligations; three-audience inspection interfaces with binding retention floor; prototype scope (full pipeline, 24 colonists, the complete calibration queue, exit criterion defined); non-goals; engineering risks; 10 deferred engineering questions (EQ-1–EQ-10)
 
-**Contradiction report:** None found — checked against the freeze's 30 locked decisions, ADR-17, ADR-18, and the approved AI Behavior Specification. AQ-2 (relationship record storage) is inherited as a standing open question, reported (not resolved): M10's interface contract is storage-agnostic and M10's implementation is formally blocked on AQ-2 per freeze entry condition 2.
+**Contradiction report:** None found — re-checked on 2026-07-17 against the freeze's 30 locked decisions, ADR-17, ADR-18, ADR-20, and the approved AI Behavior Specification. No new ADR is required: ADR-20 resolved AQ-2, and the remaining gap is implementation scope (explicit offer/response protocol and autonomous multi-colonist runtime), not architecture contradiction.
 
 **Constraints honored:** No implementation, code, TypeScript, pseudocode, formulas, or data-structure definitions. Architecture unchanged; no ADR reopened; no files created beyond this document. Every module traces to accepted design/ADR sources (traceability bracketing throughout).
 
 **Review clarification applied (engineering review 2026-07-10 — Prototype Scope only; no architecture, module boundary, or update-order change):**
 - §10: 24 colonists clarified as the validation target, not the required first prototype size; staged progression defined — 1 colonist (smallest meaningful end-to-end loop, the first implementation slice) → 3 (first social surface) → 8 (first colony texture) → 24 (validation); stage 1–3 calibrations provisional, only stage-4 answers count against the deferred-question ledger
 
+**Architecture reconciliation applied (2026-07-17 — Issue #99; no architecture, module boundary, or update-order change):**
+- Replaced all stale AQ-2-open / M10-blocked references with ADR-20's accepted centralized per-pair storage model
+- Recorded the actual Stage 2 runtime boundary now present in code: one fully simulated colonist plus an identity-only roster, with real relationship storage, relational memory formation, companionship consequences, and Shared Meal overlay
+- Identified the autonomous three-colonist runtime as an implementation expansion under the existing seven-phase architecture, not a new ADR trigger
+
 **This document unblocks (upon approval):**
 - Implementation planning (module boundaries, interface contracts, and ordering discipline fixed; first slice defined — the stage-1 single-colonist loop)
-- AQ-2 resolution work (EQ-1 — now the only blocker on the relationship path)
+- Relationship-follow-on slices on top of ADR-20's accepted M10 storage model
 - Prototype planning against §10's scope and exit criterion
 - Replay harness and debug tooling design (EQ-8, specified as first-wave work)
 
 **Follow-up tasks:**
-- Resolve AQ-2 (EQ-1) before M10 implementation [freeze entry condition 2]
-- EQ-2/EQ-3/EQ-6/EQ-8 before their respective first implementation work
+- Implement the explicit ADR-18 offer/response protocol before promoting roster colonists into independent simulated agents
+- EQ-1/EQ-2/EQ-3/EQ-6/EQ-8 before their respective implementation waves
 - ADR-19 — Colonist Arrival System (candidate; prototype seeds colonists directly until then)
 
 **Not committed** per instruction.
