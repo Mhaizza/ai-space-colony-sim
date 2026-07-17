@@ -1,6 +1,6 @@
 # ADR-22 - Per-Colonist Runtime Collection
 
-**Status:** Proposed (awaiting architecture review)
+**Status:** Accepted (architecture review + Human acceptance 2026-07-17, issue #130)
 **Date:** 2026-07-17
 **Phase:** Phase 3 - Stage 2 Slice 6 architecture gate
 **Deciders:** Project owner, Technical Architect
@@ -141,7 +141,7 @@ One authoritative list, no asymmetry, ordering structural, existing invariants c
 ## Kanban Update
 
 **Card:** [Phase 3] ADR-22 - Per-Colonist Runtime Collection
-**Status:** Review - ADR drafted (status Proposed), awaiting architecture review and Human acceptance per issue #130.
+**Status:** Done - architecture review passed and Human acceptance recorded on issue #130 (2026-07-17); status flipped to Accepted.
 **Completed:** Drafted `ai-studio/adr/0022-per-colonist-runtime-collection.md` from the approved design's D1/D4/D6 exactly: the `ColonistRuntime` container and canonically ordered collection with roster retirement (D1), the EQ-3 single-stream decision with its recorded cost and revisit trigger (D2), save v5 (D3), the full validate-never-repair load-rejection list (D4), replay consolidation (D5), inspection surface (D6), eight required invariants, four options considered, and pre-implementation validation requirements.
 **Changed Files:**
   CREATED  ai-studio/adr/0022-per-colonist-runtime-collection.md
