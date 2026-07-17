@@ -60,3 +60,14 @@ If you want to start work immediately without redesigning the process each time,
 ## Daily Rule
 
 If the next step is obvious, provide the next prompt immediately. Do not ask whether one should be written.
+
+## Validate The Pack
+
+From the repository root, run:
+
+```powershell
+node tools/ai-workflow/validate-workflow-pack.mjs .
+node --test tools/ai-workflow/validate-workflow-pack.test.mjs
+```
+
+The validator is read-only. It checks required workflow files, policy and role contracts, lifecycle template fields, entrypoint routing, and local Markdown links.
