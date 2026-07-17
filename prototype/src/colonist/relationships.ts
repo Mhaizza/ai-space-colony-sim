@@ -333,19 +333,28 @@ export function applyInteraction(store: RelationshipStore, fact: InteractionFact
  * merely because time passed (D4). No-ops (unchanged store, no consequences) when the store has
  * no eligible pairs or `elapsedDuration` is not positive. Pure, atomic per pair record, clamped,
  * no PRNG.
+ *
+ * `excludedPairs` — Stage 2 Slice 6b: generalized from a single pair to a set (still optional,
+ * still defaults to none excluded) because promoting every colonist to full simulation means
+ * more than one pair can be simultaneously mid-interaction in the same tick (tick.ts's own
+ * companionship-credit path already applies that pair's delta directly; atrophy must not
+ * ALSO apply to it the same tick). This is the same exclusion concept ADR-20 already
+ * anticipated at multi-colonist scale ("Sparse storage remains cheap at 3, 8, and 24
+ * colonists") — no storage shape, ownership, or invariant changes.
  */
-export function applyAtrophy(store: RelationshipStore, elapsedDuration: number, excludedPair?: PairKey): RelationshipWriteResult {
+export function applyAtrophy(store: RelationshipStore, elapsedDuration: number, excludedPairs?: readonly PairKey[]): RelationshipWriteResult {
   if (elapsedDuration <= 0) return { store, consequences: [] };
 
   const delta = RELATIONSHIP_TUNING.atrophyPerTick * elapsedDuration;
   const consequences: RelationshipConsequence[] = [];
   let nextStore = store;
+  const excludedKeys = new Set((excludedPairs ?? []).map(([min, max]) => `${min}\0${max}`));
 
   const minIds = Object.keys(store.pairs).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   for (const min of minIds) {
     const maxIds = Object.keys(store.pairs[min]!).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     for (const max of maxIds) {
-      if (excludedPair !== undefined && excludedPair[0] === min && excludedPair[1] === max) continue;
+      if (excludedKeys.has(`${min}\0${max}`)) continue;
       const record = store.pairs[min]![max]!;
       if (record.lastInteractionTick === null) continue; // D4: never-interacted pairs are not eligible
 
