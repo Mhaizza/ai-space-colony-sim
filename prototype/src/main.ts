@@ -60,8 +60,11 @@ export function continueRun(save: string, ticks: number): RunOutput {
 export function verifySaveReplay(save: string, seed: number): ReplayResult {
   assertSeed(seed);
   const state = deserialize(save);
-  const { id, name, skills, baseTraits } = state.colonist.identity;
-  const initial = createInitialState(seed, id, name, skills, baseTraits, state.roster);
+  // ADR-22 D1: rebuild from the saved collection — the canonically-first entry maps to
+  // createInitialState's primary parameter, the rest to its roster parameter (6a semantics).
+  const [first, ...rest] = state.colonists;
+  const { id, name, skills, baseTraits } = first!.colonist.identity;
+  const initial = createInitialState(seed, id, name, skills, baseTraits, rest.map((r) => r.colonist.identity));
   return verifyReplay(initial, state);
 }
 

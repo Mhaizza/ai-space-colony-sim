@@ -36,12 +36,9 @@ export interface NeedInspection {
   readonly satisfied: boolean;
 }
 
-/** The full read-only snapshot of one SimulationState — everything Stage 1 inspection surfaces. */
-export interface InspectionSummary {
-  readonly tick: number;
-  readonly day: number;
-  readonly period: ShiftPeriod;
-  readonly colonist: ColonistIdentity;
+/** One colonist's read-only inspection summary (ADR-22 D6) — the per-colonist slice of what used to be top-level fields. */
+export interface ColonistInspection {
+  readonly identity: ColonistIdentity;
   readonly needs: readonly NeedInspection[];
   readonly stress: number;
   /** Tier-1 observable ambient state (ADR-05) — the seven-state registry, derived here rather than stored redundantly. */
@@ -50,6 +47,15 @@ export interface InspectionSummary {
   readonly suspendedGoal: Goal | null;
   readonly execution: Execution | null;
   readonly suspendedExecution: Execution | null;
+}
+
+/** The full read-only snapshot of one SimulationState — everything Stage 2 inspection surfaces. */
+export interface InspectionSummary {
+  readonly tick: number;
+  readonly day: number;
+  readonly period: ShiftPeriod;
+  /** One entry per collection colonist, in canonical (collection) order — detached copies (ADR-22 D6). */
+  readonly colonists: readonly ColonistInspection[];
   readonly prng: PrngState;
   readonly foodStock: number;
   readonly recentEvents: EventLog;
@@ -62,12 +68,6 @@ export interface InspectionSummary {
    * until a later, separately-approved slice wires candidate/decision consumption.
    */
   readonly relationships: readonly PairView[];
-  /**
-   * Stage 2 Slice 2 — the identity-only multi-colonist roster (other colonists a relationship
-   * pair may reference), detached exactly like `colonist`. Read-only: this module never
-   * simulates a roster member and never derives anything from it beyond exposing it as-is.
-   */
-  readonly roster: readonly ColonistIdentity[];
   /**
    * Stage 2 Slice 5 (ADR-21 D6): every offer in M12's store — pending and retained resolved —
    * as detached copies in stored (ascending-id) order. Read-only exposure for inspection only:
@@ -99,7 +99,7 @@ function detach<T>(value: T): T {
  * (lexicographic by [min, max], matching ADR-20 D5's serialization order). Read-only: calls
  * only `pairView`, never a write path, and never touches the store beyond enumerating its keys.
  */
-function allRelationshipPairViews(store: RelationshipStore, primaryId: string, roster: readonly ColonistIdentity[]): readonly PairView[] {
+function allRelationshipPairViews(store: RelationshipStore, colonistIds: readonly string[]): readonly PairView[] {
   const minIds = Object.keys(store.pairs).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const views: PairView[] = [];
   const seen = new Set<string>();
@@ -110,9 +110,13 @@ function allRelationshipPairViews(store: RelationshipStore, primaryId: string, r
       views.push(pairView(store, min, max));
     }
   }
-  for (const entry of roster) {
-    const [min, max] = canonicalPairId(primaryId, entry.id);
-    if (!seen.has(`${min}\0${max}`)) views.push(pairView(store, min, max));
+  // Absent pairs shown with the D4 default: every unordered pair of collection colonists not
+  // yet materialized (ADR-22 D6 — the collection is the one colonist list to enumerate from).
+  for (let i = 0; i < colonistIds.length; i++) {
+    for (let j = i + 1; j < colonistIds.length; j++) {
+      const [min, max] = canonicalPairId(colonistIds[i]!, colonistIds[j]!);
+      if (!seen.has(`${min}\0${max}`)) views.push(pairView(store, min, max));
+    }
   }
   return views;
 }
@@ -136,16 +140,28 @@ export function recentDecisions(state: SimulationState, limit: number): Decision
  */
 export function inspect(state: SimulationState, recentLimit = 10): InspectionSummary {
   assertLimit(recentLimit);
-  const traits = state.colonist.identity.baseTraits;
-  const needs = NEEDS.map((id): NeedInspection => {
-    const track = state.colonist.needs[id];
+  const colonists = state.colonists.map((runtime): ColonistInspection => {
+    const traits = runtime.colonist.identity.baseTraits;
+    const needs = NEEDS.map((id): NeedInspection => {
+      const track = runtime.colonist.needs[id];
+      return {
+        id,
+        level: track.level,
+        ticksBelowLow: track.ticksBelowLow,
+        low: isLow(id, track.level, traits),
+        critical: isCritical(id, track.level),
+        satisfied: isSatisfied(id, track.level),
+      };
+    });
     return {
-      id,
-      level: track.level,
-      ticksBelowLow: track.ticksBelowLow,
-      low: isLow(id, track.level, traits),
-      critical: isCritical(id, track.level),
-      satisfied: isSatisfied(id, track.level),
+      identity: detach(runtime.colonist.identity),
+      needs,
+      stress: runtime.colonist.stress.level,
+      ambientState: ambientStateFor(runtime.execution, runtime.colonist.stress),
+      currentGoal: detach(runtime.colonist.currentGoal),
+      suspendedGoal: detach(runtime.colonist.suspendedGoal),
+      execution: detach(runtime.execution),
+      suspendedExecution: detach(runtime.suspendedExecution),
     };
   });
 
@@ -153,20 +169,12 @@ export function inspect(state: SimulationState, recentLimit = 10): InspectionSum
     tick: state.clock.tick,
     day: dayOf(state.clock),
     period: periodAt(state.policy, tickOfDay(state.clock)),
-    colonist: detach(state.colonist.identity),
-    needs,
-    stress: state.colonist.stress.level,
-    ambientState: ambientStateFor(state.execution, state.colonist.stress),
-    currentGoal: detach(state.colonist.currentGoal),
-    suspendedGoal: detach(state.colonist.suspendedGoal),
-    execution: detach(state.execution),
-    suspendedExecution: detach(state.suspendedExecution),
+    colonists,
     prng: detach(state.prng),
     foodStock: state.world.foodStock,
     recentEvents: recentEvents(state, recentLimit),
     recentDecisions: recentDecisions(state, recentLimit),
-    relationships: detach(allRelationshipPairViews(state.relationships, state.colonist.identity.id, state.roster)),
-    roster: detach(state.roster),
+    relationships: detach(allRelationshipPairViews(state.relationships, state.colonists.map((r) => r.colonist.identity.id))),
     socialOffers: detach(state.socialOffers.offers),
   };
 }

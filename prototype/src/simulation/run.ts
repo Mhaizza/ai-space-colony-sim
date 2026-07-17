@@ -17,7 +17,7 @@ import { createSocialOfferStore } from "../task/socialOffers.js";
 import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld } from "../world/world.js";
 import { createDecisionLog, createEventLog } from "../records/logs.js";
-import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState, type TickEvent } from "./tick.js";
+import { createFreshMemoryBaselines, tick, validateSimulationState, type ColonistRuntime, type SimulationState, type TickEvent } from "./tick.js";
 
 /**
  * Creates a fresh Stage 1 simulation: default station, default policy, one simulated colonist,
@@ -33,30 +33,33 @@ export function createInitialState(
   baseTraits: readonly TraitId[] = [],
   roster: readonly ColonistIdentity[] = [],
 ): SimulationState {
-  const clonedRoster = roster.map((entry) => ({
-    id: entry.id,
-    name: entry.name,
-    skills: [...entry.skills],
-    baseTraits: [...entry.baseTraits],
-  }));
+  // ADR-22 D1: one canonically ordered colonist collection. The former identity-only roster
+  // parameter is preserved for callers, but each entry now becomes a full (inert) runtime
+  // container — fresh colonist state, no execution, fresh baselines. ponytail: 6a keeps these
+  // entries unsimulated (tick.ts's transitional single-active rule); 6b promotes them.
+  const runtimes: ColonistRuntime[] = [
+    freshRuntime(createColonist(colonistId, colonistName, skills, baseTraits)),
+    ...roster.map((entry) => freshRuntime(createColonist(entry.id, entry.name, entry.skills, entry.baseTraits))),
+  ].sort((a, b) => (a.colonist.identity.id < b.colonist.identity.id ? -1 : a.colonist.identity.id > b.colonist.identity.id ? 1 : 0));
   const state: SimulationState = {
     clock: createClock(),
     world: createWorld(),
     policy: createDefaultPolicy(),
-    colonist: createColonist(colonistId, colonistName, skills, baseTraits),
-    execution: null,
-    suspendedExecution: null,
+    colonists: runtimes,
     prng: createPrng(seed),
-    ...createFreshMemoryBaselines(),
     hasBootstrapped: false,
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
-    roster: clonedRoster,
     socialOffers: createSocialOfferStore(),
   };
   validateSimulationState(state);
   return state;
+}
+
+/** A fresh, inert runtime container for a newly created colonist: no execution, fresh baselines. */
+export function freshRuntime(colonist: ColonistRuntime["colonist"]): ColonistRuntime {
+  return { colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() };
 }
 
 /** The full result of a headless run: final state plus the concatenated event trace across every tick. */

@@ -62,14 +62,14 @@ describe("complete state round-trip", () => {
       motivation: "free-time social candidate",
       adoptedAtTick: 0,
     };
+    const seeded = createInitialState(7, "c1", "Maya", [], [], [{ id: "npc-42", name: "NPC 42", skills: [], baseTraits: [] }]);
     const withSocialGoal: SimulationState = {
-      ...base,
-      colonist: { ...base.colonist, currentGoal: socialGoal },
-      roster: [{ id: "npc-42", name: "NPC 42", skills: [], baseTraits: [] }],
+      ...seeded,
+      colonists: [{ ...seeded.colonists[0]!, colonist: { ...seeded.colonists[0]!.colonist, currentGoal: socialGoal } }, seeded.colonists[1]!],
     };
     const reloaded = deserialize(serialize(withSocialGoal));
-    expect(reloaded.colonist.currentGoal).toEqual(socialGoal);
-    expect(reloaded.colonist.currentGoal?.relatedColonistId).toBe("npc-42");
+    expect(reloaded.colonists[0]!.colonist.currentGoal).toEqual(socialGoal);
+    expect(reloaded.colonists[0]!.colonist.currentGoal?.relatedColonistId).toBe("npc-42");
   });
 });
 
@@ -77,10 +77,10 @@ describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)
   const zeke: ColonistIdentity = { id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: ["driven"] };
   const yara: ColonistIdentity = { id: "yara", name: "Yara", skills: [], baseTraits: ["gregarious"] };
 
-  it("round-trips a roster of 2 colonists alongside the primary colonist", () => {
+  it("round-trips a 3-entry colonist collection", () => {
     const state = createInitialState(1, "c1", "Maya", [], [], [zeke, yara]);
     const reloaded = deserialize(serialize(state));
-    expect(reloaded.roster).toEqual([zeke, yara]);
+    expect(reloaded.colonists.map((r) => r.colonist.identity.id)).toEqual(["c1", "yara", "zeke"]);
     expect(reloaded).toEqual(state);
   });
 
@@ -102,8 +102,8 @@ describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)
     expect(reloaded.relationships.pairs["c1"]!["zeke"]!.minTowardMaxAffinity).toBe(20);
   });
 
-  it("still rejects a relationship pair naming a colonist id that is neither the primary colonist nor in the roster", () => {
-    const base = createInitialState(1, "c1", "Maya", [], [], [zeke]); // roster has zeke, not yara
+  it("still rejects a relationship pair naming a colonist id outside the collection", () => {
+    const base = createInitialState(1, "c1", "Maya", [], [], [zeke]); // collection has c1+zeke, not yara
     const relationships = applyInteraction(createRelationshipStore(), {
       colonistAId: "c1",
       colonistBId: "yara",
@@ -118,7 +118,7 @@ describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)
     expect(() => deserialize(serialize(state))).toThrow(/unknown colonist id/);
   });
 
-  it("rejects a relationship pair between roster-only placeholders because only the primary colonist is simulated in this slice", () => {
+  it("accepts a relationship pair between two non-first collection entries (ADR-22: no privileged colonist)", () => {
     const base = createInitialState(1, "c1", "Maya", [], [], [zeke, yara]);
     const relationships = applyInteraction(createRelationshipStore(), {
       colonistAId: "zeke",
@@ -131,12 +131,12 @@ describe("multi-colonist roster + relationship pair round-trip (Stage 2 Slice 2)
       bTowardADelta: 10,
     }).store;
     const state: SimulationState = { ...base, relationships };
-    expect(() => deserialize(serialize(state))).toThrow(/simulated colonist id/);
+    expect(deserialize(serialize(state)).relationships).toEqual(relationships);
   });
 
-  it("a real run with a 3-colonist roster (primary + 2) still round-trips exactly after ticks advance", () => {
+  it("a real run with a 3-entry collection still round-trips exactly after ticks advance", () => {
     const state = run(createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]), 200).finalState;
-    expect(state.roster).toEqual([zeke, yara]); // sanity: no tick phase ever touches the roster
+    expect(state.colonists).toHaveLength(3);
     expect(deserialize(serialize(state))).toEqual(state);
   });
 });
@@ -216,7 +216,7 @@ describe("deterministic replay after save/load", () => {
   it("save mid-execution and continue identically to an uninterrupted run", () => {
     const initial = createInitialState(42, "c1", "Maya", ["engineering"]);
     const midpoint = run(initial, 100).finalState;
-    expect(midpoint.execution).not.toBeNull(); // sanity: something is actually in progress by tick 100
+    expect(midpoint.colonists[0]!.execution).not.toBeNull(); // sanity: something is actually in progress by tick 100
 
     const reloaded = deserialize(serialize(midpoint));
     const continuedFromReload = run(reloaded, 100);
@@ -255,8 +255,7 @@ describe("deterministic replay after save/load", () => {
     };
     const withSuspension: SimulationState = {
       ...base,
-      colonist: { ...base.colonist, suspendedGoal },
-      suspendedExecution,
+      colonists: [{ ...base.colonists[0]!, colonist: { ...base.colonists[0]!.colonist, suspendedGoal }, suspendedExecution }],
     };
 
     const reloaded = deserialize(serialize(withSuspension));
@@ -308,21 +307,21 @@ describe("malformed-state rejection", () => {
   it("rejects a missing required field", () => {
     const state = createInitialState(1, "c1", "Maya");
     const saved = JSON.parse(serialize(state)) as Record<string, unknown>;
-    delete saved.colonist;
+    delete saved.colonists;
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
   });
 
   it("rejects a wrong-typed field rather than coercing it", () => {
     const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as Record<string, unknown>;
-    saved.stressBaseline = "not a number";
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.colonists[0].stressBaseline = "not a number";
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
   });
 
   it("rejects a malformed suspended-pair invariant (suspendedExecution without a suspendedGoal), never silently repairing it", () => {
     const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as { execution: unknown; suspendedExecution: unknown; colonist: { suspendedGoal: unknown } };
-    saved.suspendedExecution = {
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.colonists[0].suspendedExecution = {
       taskId: "workAtWorkstation",
       goalKey: "shiftAssignment:work",
       status: "interrupted",
@@ -341,79 +340,83 @@ describe("malformed-state rejection", () => {
 
   it("REGRESSION (Copilot-confirmed): rejects an unrecognized trait id in baseTraits instead of casting it through", () => {
     const state = createInitialState(1, "c1", "Maya", ["engineering"], ["driven"]);
-    const saved = JSON.parse(serialize(state)) as { colonist: { identity: { baseTraits: unknown[] } } };
-    saved.colonist.identity.baseTraits = ["unknown"];
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.colonists[0].colonist.identity.baseTraits = ["unknown"];
     expect(() => deserialize(JSON.stringify(saved))).toThrow(/unrecognized value/);
   });
 
   it("REGRESSION (Copilot-confirmed): rejects a need level outside [0, 1]", () => {
     const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as { colonist: { needs: { hunger: { level: number } } } };
-    saved.colonist.needs.hunger.level = -10;
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.colonists[0].colonist.needs.hunger.level = -10;
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
   });
 
   it("REGRESSION (Copilot-confirmed): rejects a negative or fractional ticksBelowLow", () => {
     const state = createInitialState(1, "c1", "Maya");
-    const negative = JSON.parse(serialize(state)) as { colonist: { needs: { rest: { ticksBelowLow: number } } } };
-    negative.colonist.needs.rest.ticksBelowLow = -5;
+    const negative: RawSave = JSON.parse(serialize(state));
+    negative.colonists[0].colonist.needs.rest.ticksBelowLow = -5;
     expect(() => deserialize(JSON.stringify(negative))).toThrow();
 
-    const fractional = JSON.parse(serialize(state)) as { colonist: { needs: { rest: { ticksBelowLow: number } } } };
-    fractional.colonist.needs.rest.ticksBelowLow = 1.5;
+    const fractional: RawSave = JSON.parse(serialize(state));
+    fractional.colonists[0].colonist.needs.rest.ticksBelowLow = 1.5;
     expect(() => deserialize(JSON.stringify(fractional))).toThrow();
   });
 
   it("REGRESSION (Copilot-confirmed): rejects an inconsistent ACTIVE goal/execution pair at the save boundary", () => {
     const midpoint = run(createInitialState(42, "c1", "Maya", ["engineering"]), 100).finalState;
-    expect(midpoint.execution).not.toBeNull(); // sanity: the fixture actually has an active pair to corrupt
+    expect(midpoint.colonists[0]!.execution).not.toBeNull(); // sanity: the fixture actually has an active pair to corrupt
 
     const mismatchedKey: RawSave = JSON.parse(serialize(midpoint));
-    mismatchedKey.execution.goalKey = "lowNeed:social"; // no longer names the current goal
+    mismatchedKey.colonists[0].execution.goalKey = "lowNeed:social"; // no longer names the current goal
     expect(() => deserialize(JSON.stringify(mismatchedKey))).toThrow(/goalKey/);
 
     const orphaned: RawSave = JSON.parse(serialize(midpoint));
-    orphaned.colonist.currentGoal = null; // execution left running for no goal at all
+    orphaned.colonists[0].colonist.currentGoal = null; // execution left running for no goal at all
     expect(() => deserialize(JSON.stringify(orphaned))).toThrow(/currentGoal/);
 
     const blockedGoal: RawSave = JSON.parse(serialize(midpoint));
-    blockedGoal.colonist.currentGoal.status = "blocked"; // an execution cannot serve a blocked goal
+    blockedGoal.colonists[0].colonist.currentGoal.status = "blocked"; // an execution cannot serve a blocked goal
     expect(() => deserialize(JSON.stringify(blockedGoal))).toThrow(/active/);
 
     const notInProgress: RawSave = JSON.parse(serialize(midpoint));
-    notInProgress.execution.status = "completed"; // the active slot never retains a finished execution
+    notInProgress.colonists[0].execution.status = "completed"; // the active slot never retains a finished execution
     expect(() => deserialize(JSON.stringify(notInProgress))).toThrow(/inProgress/);
   });
 
-  it("rejects a roster entry with an unrecognized trait id (Stage 2 Slice 2)", () => {
-    const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
-    saved.roster = [{ id: "npc-1", name: "Zeke", skills: [], baseTraits: ["unknown"] }];
+  it("rejects a collection entry with an unrecognized trait id (Stage 2 Slice 6a)", () => {
+    const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] };
+    const saved: RawSave = JSON.parse(serialize(createInitialState(1, "c1", "Maya", [], [], [zeke])));
+    saved.colonists[1].colonist.identity.baseTraits = ["unknown"];
     expect(() => deserialize(JSON.stringify(saved))).toThrow(/unrecognized value/);
   });
 
-  it("rejects a roster entry missing a required identity field", () => {
-    const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
-    saved.roster = [{ id: "npc-1", skills: [], baseTraits: [] }]; // no "name"
+  it("rejects a collection entry missing a required identity field", () => {
+    const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] };
+    const saved: RawSave = JSON.parse(serialize(createInitialState(1, "c1", "Maya", [], [], [zeke])));
+    delete saved.colonists[1].colonist.identity.name;
     expect(() => deserialize(JSON.stringify(saved))).toThrow();
   });
 
-  it("rejects a roster whose id duplicates the primary colonist's own id (cross-field invariant)", () => {
+  it("rejects duplicate colonist ids in the collection (ADR-22 D4 cross-field invariant)", () => {
     const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
-    saved.roster = [{ id: "c1", name: "Impostor", skills: [], baseTraits: [] }];
-    expect(() => deserialize(JSON.stringify(saved))).toThrow(/roster/);
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.colonists = [saved.colonists[0], saved.colonists[0]];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/canonical ascending id order/);
   });
 
-  it("rejects a roster with two entries sharing the same id", () => {
+  it("rejects an out-of-order collection (ADR-22 D4)", () => {
+    const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] };
+    const saved: RawSave = JSON.parse(serialize(createInitialState(1, "c1", "Maya", [], [], [zeke])));
+    saved.colonists = [saved.colonists[1], saved.colonists[0]];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/canonical ascending id order/);
+  });
+
+  it("rejects an empty collection (ADR-22 D4)", () => {
     const state = createInitialState(1, "c1", "Maya");
-    const saved = JSON.parse(serialize(state)) as { roster: unknown[] };
-    saved.roster = [
-      { id: "npc-1", name: "Zeke", skills: [], baseTraits: [] },
-      { id: "npc-1", name: "Yara", skills: [], baseTraits: [] },
-    ];
-    expect(() => deserialize(JSON.stringify(saved))).toThrow(/duplicate/);
+    const saved: RawSave = JSON.parse(serialize(state));
+    saved.colonists = [];
+    expect(() => deserialize(JSON.stringify(saved))).toThrow(/non-empty/);
   });
 });
 
@@ -423,7 +426,7 @@ describe("memory-pool validation (Copilot-confirmed): the memory module's own co
     const state = createInitialState(1, "c1", "Maya");
     const saved: RawSave = JSON.parse(serialize(state));
     saved.clock.tick = clockTick;
-    saved.colonist.memory = entries;
+    saved.colonists[0].colonist.memory = entries;
     return saved;
   }
 
@@ -434,7 +437,7 @@ describe("memory-pool validation (Copilot-confirmed): the memory module's own co
   it("accepts a valid pool (positive control), up to exactly the configured capacity", () => {
     const atCapacity = Array.from({ length: MEMORY_TUNING.poolSize }, (_, i) => entry({ id: i }));
     const loaded = deserialize(JSON.stringify(savedWithMemory(atCapacity)));
-    expect(loaded.colonist.memory.length).toBe(MEMORY_TUNING.poolSize);
+    expect(loaded.colonists[0]!.colonist.memory.length).toBe(MEMORY_TUNING.poolSize);
   });
 
   it("rejects a fractional or negative memory id (memory ids are non-negative integers, assigned in formation order)", () => {
@@ -456,7 +459,7 @@ describe("memory-pool validation (Copilot-confirmed): the memory module's own co
     expect(() => deserialize(JSON.stringify(savedWithMemory([entry({ formedAtTick: 6 })], 5)))).toThrow(/postdates/);
     // The boundary itself stays valid: formed on the save's current tick.
     const atBoundary = deserialize(JSON.stringify(savedWithMemory([entry({ formedAtTick: 5 })], 5)));
-    expect(atBoundary.colonist.memory[0]!.formedAtTick).toBe(5);
+    expect(atBoundary.colonists[0]!.colonist.memory[0]!.formedAtTick).toBe(5);
   });
 
   it("rejects an impact outside the fixed-at-formation [0, 1] range", () => {

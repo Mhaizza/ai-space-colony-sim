@@ -154,20 +154,18 @@ describe("terminal-state verification (final review fix)", () => {
 
   it("identical logs but a modified final need value fails at its exact state path", () => {
     const { initial, final } = completedRun(1, 100);
+    const rt = final.colonists[0]!;
     const tampered: SimulationState = {
       ...final,
-      colonist: {
-        ...final.colonist,
-        needs: { ...final.colonist.needs, hunger: { ...final.colonist.needs.hunger, level: 0.12345 } },
-      },
+      colonists: [{ ...rt, colonist: { ...rt.colonist, needs: { ...rt.colonist.needs, hunger: { ...rt.colonist.needs.hunger, level: 0.12345 } } } }],
     };
     const result = verifyReplay(initial, tampered);
     expect(result.kind).toBe("divergence");
     if (result.kind === "divergence") {
       expect(result.log).toBe("state");
-      expect(result.path).toBe("colonist.needs.hunger.level");
+      expect(result.path).toBe("colonists[0].colonist.needs.hunger.level");
       expect(result.expected).toBe(0.12345);
-      expect(result.actual).toBe(final.colonist.needs.hunger.level);
+      expect(result.actual).toBe(final.colonists[0]!.colonist.needs.hunger.level);
     }
   });
 
@@ -184,16 +182,17 @@ describe("terminal-state verification (final review fix)", () => {
 
   it("identical logs but modified execution progress fails at execution.elapsedTicks", () => {
     const { initial, final } = completedRun(42, 100);
-    expect(final.execution).not.toBeNull(); // sanity: fixture actually has a terminal execution
+    const rt = final.colonists[0]!;
+    expect(rt.execution).not.toBeNull(); // sanity: fixture actually has a terminal execution
     const tampered: SimulationState = {
       ...final,
-      execution: { ...final.execution!, elapsedTicks: final.execution!.elapsedTicks + 1 },
+      colonists: [{ ...rt, execution: { ...rt.execution!, elapsedTicks: rt.execution!.elapsedTicks + 1 } }],
     };
     const result = verifyReplay(initial, tampered);
     expect(result.kind).toBe("divergence");
     if (result.kind === "divergence") {
       expect(result.log).toBe("state");
-      expect(result.path).toBe("execution.elapsedTicks");
+      expect(result.path).toBe("colonists[0].execution.elapsedTicks");
     }
   });
 
@@ -251,7 +250,7 @@ describe("terminal-state verification (final review fix)", () => {
     const withRelationships: SimulationState = { ...initial, relationships: sampleRelationshipStore() };
     // 800 ticks is enough for atrophyPerTick (0.02) to cumulatively cross relationshipChangeSignificance (15).
     const final = run(withRelationships, 800).finalState;
-    expect(final.colonist.memory.some((e) => e.type === "relational")).toBe(true); // sanity: it really formed
+    expect(final.colonists[0]!.colonist.memory.some((e) => e.type === "relational")).toBe(true); // sanity: it really formed
     expect(verifyReplay(withRelationships, final).kind).toBe("match");
   });
 
@@ -271,39 +270,44 @@ describe("terminal-state verification (final review fix)", () => {
     const initial = createInitialState(1, "c1", "Maya", ["engineering"]);
     const withRelationships: SimulationState = { ...initial, relationships: sampleRelationshipStore() };
     const final = run(withRelationships, 800).finalState;
-    const baseline = final.relationshipAffinityBaselines.zeke;
+    const rt = final.colonists[0]!;
+    const baseline = rt.relationshipAffinityBaselines.zeke;
     expect(baseline).toBeDefined(); // sanity: the partner really was observed
     const tampered: SimulationState = {
       ...final,
-      relationshipAffinityBaselines: { ...final.relationshipAffinityBaselines, zeke: baseline! + 1 },
+      colonists: [{ ...rt, relationshipAffinityBaselines: { ...rt.relationshipAffinityBaselines, zeke: baseline! + 1 } }],
     };
     const result = verifyReplay(withRelationships, tampered);
     expect(result.kind).toBe("divergence");
     if (result.kind === "divergence") {
       expect(result.log).toBe("state");
-      expect(result.path).toBe("relationshipAffinityBaselines.zeke");
+      expect(result.path).toBe("colonists[0].relationshipAffinityBaselines.zeke");
     }
   });
 
-  it("a multi-colonist roster replays deterministically (Stage 2 Slice 2)", () => {
+  it("a multi-entry colonist collection replays deterministically (Stage 2 Slice 6a)", () => {
     const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
     const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
     const initial = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke, yara]);
     const final = run(initial, 100).finalState;
-    expect(final.roster).toEqual([zeke, yara]); // sanity: no tick phase ever touches the roster
+    expect(final.colonists.map((r) => r.colonist.identity.id)).toEqual(["c1", "yara", "zeke"]);
     expect(verifyReplay(initial, final).kind).toBe("match");
   });
 
-  it("identical logs but a modified roster fails at its exact path", () => {
+  it("identical logs but a tampered inert collection entry fails at its exact colonists[i] path", () => {
     const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
     const initial = createInitialState(1, "c1", "Maya", ["engineering"], [], [zeke]);
     const final = run(initial, 100).finalState;
-    const tampered: SimulationState = { ...final, roster: [{ ...zeke, name: "Tampered" }] };
+    const zekeRt = final.colonists[1]!;
+    const tampered: SimulationState = {
+      ...final,
+      colonists: [final.colonists[0]!, { ...zekeRt, colonist: { ...zekeRt.colonist, identity: { ...zekeRt.colonist.identity, name: "Tampered" } } }],
+    };
     const result = verifyReplay(initial, tampered);
     expect(result.kind).toBe("divergence");
     if (result.kind === "divergence") {
       expect(result.log).toBe("state");
-      expect(result.path).toBe("roster[0].name");
+      expect(result.path).toBe("colonists[1].colonist.identity.name");
     }
   });
 });

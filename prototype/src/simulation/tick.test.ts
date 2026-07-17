@@ -13,8 +13,9 @@ import { createDefaultPolicy } from "../world/policy.js";
 import { createWorld, setModuleFunctional } from "../world/world.js";
 import { SOCIAL_OFFER_TUNING, TASK_TUNING } from "../config/tuning.js";
 import { createColonist, withCurrentGoal, withNeeds, withSuspendedGoal } from "../colonist/colonist.js";
+import type { TraitId } from "../colonist/traits.js";
 import { createNeeds } from "../colonist/needs.js";
-import { createFreshMemoryBaselines, tick, validateSimulationState, type SimulationState } from "./tick.js";
+import { createFreshMemoryBaselines, tick, validateSimulationState, type ColonistRuntime, type SimulationState } from "./tick.js";
 import { run } from "./run.js";
 import { verifyReplay } from "../replay/replay.js";
 import { commitGoal, suspendGoal } from "../decision/goals.js";
@@ -36,18 +37,30 @@ function stateAtTickOfDay(
     clock: advance(createClock(), tickOfDay),
     world: createWorld(),
     policy,
-    colonist,
-    execution: null,
-    suspendedExecution: null,
+    colonists: [{ colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() }],
     prng: createPrng(seed),
-    ...createFreshMemoryBaselines(),
     hasBootstrapped: false, // a freshly-built colonist with no goal/execution — genuinely never decided
     eventLog: createEventLog(),
     decisionLog: createDecisionLog(),
     relationships: createRelationshipStore(),
-    roster: [],
     socialOffers: createSocialOfferStore(),
   };
+}
+
+// --- ADR-22 collection test helpers: patch the canonically-first (active) runtime, or append inert others ---
+function withRuntime(state: SimulationState, patch: Partial<ColonistRuntime>): SimulationState {
+  const [first, ...rest] = state.colonists;
+  return { ...state, colonists: [{ ...first!, ...patch }, ...rest] };
+}
+function withOthers(state: SimulationState, identities: readonly { id: string; name: string; skills: readonly string[]; baseTraits: readonly TraitId[] }[]): SimulationState {
+  const others = identities.map((i) => ({
+    colonist: createColonist(i.id, i.name, [...i.skills], [...i.baseTraits]),
+    execution: null,
+    suspendedExecution: null,
+    ...createFreshMemoryBaselines(),
+  }));
+  const colonists = [...state.colonists, ...others].sort((a, b) => (a.colonist.identity.id < b.colonist.identity.id ? -1 : 1));
+  return { ...state, colonists };
 }
 
 const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
@@ -75,11 +88,11 @@ function socialExecutionState(taskId: "conversation" | "sharedDowntime", related
     base.clock.tick,
   );
   return {
-    ...base,
-    colonist: withCurrentGoal(base.colonist, goal),
-    execution: beginExecution(taskDefinition(taskId), goal, base.clock.tick),
+    ...withOthers(withRuntime(base, {
+      colonist: withCurrentGoal(base.colonists[0]!.colonist, goal),
+      execution: beginExecution(taskDefinition(taskId), goal, base.clock.tick),
+    }), [zeke]),
     hasBootstrapped: true,
-    roster: [zeke],
   };
 }
 
@@ -91,12 +104,12 @@ function eatingExecutionState(
   const base = stateAtTickOfDay(0, { hunger: { level: 0.35, ticksBelowLow: 10 }, social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, 13);
   const goal = commitGoal({ source: "criticalNeed", tier: 1, key: "criticalNeed:hunger", baseUrgency: 1, relatedNeed: "hunger" }, "test hunger", base.clock.tick);
   return {
-    ...base,
-    colonist: withCurrentGoal(base.colonist, goal),
-    execution: beginExecution(taskDefinition("eatAtFoodStation"), goal, base.clock.tick),
+    ...withOthers(withRuntime(base, {
+      colonist: withCurrentGoal(base.colonists[0]!.colonist, goal),
+      execution: beginExecution(taskDefinition("eatAtFoodStation"), goal, base.clock.tick),
+    }), roster),
     hasBootstrapped: true,
     relationships,
-    roster,
     world,
   };
 }
@@ -126,15 +139,15 @@ describe("full end-to-end tick", () => {
     expect(result.events.some((e) => e.kind === "decision")).toBe(true);
     expect(result.events.some((e) => e.kind === "taskResolution")).toBe(true);
     expect(result.events.some((e) => e.kind === "executionBegun")).toBe(true);
-    expect(result.state.colonist.currentGoal).not.toBeNull();
-    expect(result.state.execution).not.toBeNull();
-    expect(result.state.execution!.status).toBe("inProgress");
+    expect(result.state.colonists[0]!.colonist.currentGoal).not.toBeNull();
+    expect(result.state.colonists[0]!.execution).not.toBeNull();
+    expect(result.state.colonists[0]!.execution!.status).toBe("inProgress");
   });
 
   it("during work with all needs satisfied, adopts the shift-assignment goal", () => {
     const result = tick(stateAtTickOfDay(0), 1);
-    expect(result.state.colonist.currentGoal?.source).toBe("shiftAssignment");
-    expect(result.state.execution?.taskId).toBe("workAtWorkstation");
+    expect(result.state.colonists[0]!.colonist.currentGoal?.source).toBe("shiftAssignment");
+    expect(result.state.colonists[0]!.execution?.taskId).toBe("workAtWorkstation");
   });
 
   it("advances the clock by exactly BASE_TICKS_PER_STEP per call", () => {
@@ -164,14 +177,14 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
       aTowardBDelta: 80,
       bTowardADelta: 80, // the acceptance draw keys on the RESPONDER's regard (design D5) — warm both directions
     });
-    const state = { ...base, relationships: warmRelationship.store, roster: [zeke] };
+    const state = { ...withOthers(base, [zeke]), relationships: warmRelationship.store };
     const afterCommit = run(state, 1).finalState;
 
-    expect(afterCommit.colonist.currentGoal?.source).toBe("voluntary");
-    expect(afterCommit.colonist.currentGoal?.relatedColonistId).toBe("zeke");
+    expect(afterCommit.colonists[0]!.colonist.currentGoal?.source).toBe("voluntary");
+    expect(afterCommit.colonists[0]!.colonist.currentGoal?.relatedColonistId).toBe("zeke");
     // Stage 2 Slice 5 (design D3): committing a social goal creates a pending OFFER — execution
     // never begins on the creation tick (the one-tick response-delay floor).
-    expect(afterCommit.execution).toBeNull();
+    expect(afterCommit.colonists[0]!.execution).toBeNull();
     expect(afterCommit.socialOffers.offers).toHaveLength(1);
     expect(afterCommit.socialOffers.offers[0]!.status).toBe("pending");
     expect(afterCommit.socialOffers.offers[0]!.responderId).toBe("zeke");
@@ -180,14 +193,14 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
     // seed's draw accepts, and the existing execution path begins exactly as before.
     const afterResolve = run(afterCommit, 1).finalState;
     expect(afterResolve.socialOffers.offers[0]!.status).toBe("accepted");
-    expect(["conversation", "sharedDowntime"]).toContain(afterResolve.execution?.taskId);
+    expect(["conversation", "sharedDowntime"]).toContain(afterResolve.colonists[0]!.execution?.taskId);
   });
 
   it("conversation restores Social need while executing", () => {
     const initial = socialExecutionState("conversation");
     const final = run(initial, 20).finalState;
 
-    expect(final.colonist.needs.social.level).toBeGreaterThan(initial.colonist.needs.social.level);
+    expect(final.colonists[0]!.colonist.needs.social.level).toBeGreaterThan(initial.colonists[0]!.colonist.needs.social.level);
   });
 
   it("conversation materializes the relationship pair and applies a positive directional delta", () => {
@@ -227,15 +240,15 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
     const conversation = run(initialConversation, 20).finalState;
     const sharedDowntime = run(initialSharedDowntime, 20).finalState;
 
-    expect(sharedDowntime.colonist.needs.social.level).toBeGreaterThan(initialSharedDowntime.colonist.needs.social.level);
-    expect(sharedDowntime.colonist.needs.social.level).toBeLessThan(conversation.colonist.needs.social.level);
+    expect(sharedDowntime.colonists[0]!.colonist.needs.social.level).toBeGreaterThan(initialSharedDowntime.colonists[0]!.colonist.needs.social.level);
+    expect(sharedDowntime.colonists[0]!.colonist.needs.social.level).toBeLessThan(conversation.colonists[0]!.colonist.needs.social.level);
   });
 
   it("social actions do not credit Purpose", () => {
     const initial = socialExecutionState("conversation");
     const final = run(initial, 20).finalState;
 
-    expect(final.colonist.needs.purpose.level).toBeLessThanOrEqual(initial.colonist.needs.purpose.level);
+    expect(final.colonists[0]!.colonist.needs.purpose.level).toBeLessThanOrEqual(initial.colonists[0]!.colonist.needs.purpose.level);
   });
 
   it("social execution remains replay-deterministic", () => {
@@ -249,7 +262,7 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
     const final = run(socialExecutionState("conversation"), 50).finalState;
     const reloaded = deserialize(serialize(final));
 
-    expect(reloaded.colonist.needs.social).toEqual(final.colonist.needs.social);
+    expect(reloaded.colonists[0]!.colonist.needs.social).toEqual(final.colonists[0]!.colonist.needs.social);
     expect(reloaded.relationships).toEqual(final.relationships);
     expect(reloaded.eventLog).toEqual(final.eventLog);
     expect(reloaded.decisionLog).toEqual(final.decisionLog);
@@ -260,21 +273,21 @@ describe("companionship execution effects (Stage 2 Slice 3 Build Step 3)", () =>
     const final = run(initial, 20).finalState;
 
     expect(final.relationships).toEqual(createRelationshipStore());
-    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+    expect(final.colonists[0]!.colonist.needs.social.level).toBeLessThan(initial.colonists[0]!.colonist.needs.social.level);
   });
 
   it("rejects a social execution target that is not in the roster", () => {
     const state = socialExecutionState("conversation", "ghost");
 
-    expect(() => validateSimulationState(state)).toThrow(/not present in the roster/);
-    expect(() => tick(state, 1)).toThrow(/not present in the roster/);
+    expect(() => validateSimulationState(state)).toThrow(/not present in the colonist collection/);
+    expect(() => tick(state, 1)).toThrow(/not present in the colonist collection/);
   });
 
   it("rejects a social execution target that points at the primary colonist", () => {
     const state = socialExecutionState("conversation", "c1");
 
-    expect(() => validateSimulationState(state)).toThrow(/must not target the primary colonist/);
-    expect(() => tick(state, 1)).toThrow(/must not target the primary colonist/);
+    expect(() => validateSimulationState(state)).toThrow(/must not target the goal owner/);
+    expect(() => tick(state, 1)).toThrow(/must not target the goal owner/);
   });
 });
 
@@ -283,8 +296,8 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     const initial = eatingExecutionState();
     const final = run(initial, 20).finalState;
 
-    expect(final.colonist.needs.hunger.level).toBeGreaterThan(initial.colonist.needs.hunger.level);
-    expect(final.colonist.needs.social.level).toBeGreaterThan(initial.colonist.needs.social.level);
+    expect(final.colonists[0]!.colonist.needs.hunger.level).toBeGreaterThan(initial.colonists[0]!.colonist.needs.hunger.level);
+    expect(final.colonists[0]!.colonist.needs.social.level).toBeGreaterThan(initial.colonists[0]!.colonist.needs.social.level);
     expect(perspective(final.relationships, "c1", "zeke").affinity).toBeGreaterThan(0);
     expect(perspective(final.relationships, "zeke", "c1").affinity).toBe(0);
   });
@@ -293,8 +306,8 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     const initial = eatingExecutionState([]);
     const final = run(initial, 20).finalState;
 
-    expect(final.colonist.needs.hunger.level).toBeGreaterThan(initial.colonist.needs.hunger.level);
-    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+    expect(final.colonists[0]!.colonist.needs.hunger.level).toBeGreaterThan(initial.colonists[0]!.colonist.needs.hunger.level);
+    expect(final.colonists[0]!.colonist.needs.social.level).toBeLessThan(initial.colonists[0]!.colonist.needs.social.level);
     expect(final.relationships).toEqual(createRelationshipStore());
   });
 
@@ -311,15 +324,15 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     }).store;
     const final = run(eatingExecutionState([zeke], hostile), 20).finalState;
 
-    expect(final.colonist.needs.social.level).toBeLessThan(eatingExecutionState([zeke], hostile).colonist.needs.social.level);
+    expect(final.colonists[0]!.colonist.needs.social.level).toBeLessThan(eatingExecutionState([zeke], hostile).colonists[0]!.colonist.needs.social.level);
     expect(perspective(final.relationships, "c1", "zeke").affinity).toBeLessThan(0);
   });
 
   it("sharedMeal remains an overlay, not a directly adopted voluntary task", () => {
     const freeStart = policy.workTicks + policy.restTicks;
-    const final = run({ ...stateAtTickOfDay(freeStart, {}, 31), roster: [zeke] }, 1).finalState;
+    const final = run(withOthers(stateAtTickOfDay(freeStart, {}, 31), [zeke]), 1).finalState;
 
-    expect(final.execution?.taskId).not.toBe("sharedMeal");
+    expect(final.colonists[0]!.execution?.taskId).not.toBe("sharedMeal");
   });
 
   it("preserves replay and save/load determinism", () => {
@@ -328,7 +341,7 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     const reloaded = deserialize(serialize(final));
 
     expect(verifyReplay(initial, final).kind).toBe("match");
-    expect(reloaded.colonist.needs.social).toEqual(final.colonist.needs.social);
+    expect(reloaded.colonists[0]!.colonist.needs.social).toEqual(final.colonists[0]!.colonist.needs.social);
     expect(reloaded.relationships).toEqual(final.relationships);
   });
 
@@ -339,7 +352,7 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     const withCompany = run(eatingExecutionState([zeke]), 20).finalState;
     const alone = run(eatingExecutionState([]), 20).finalState;
 
-    expect(withCompany.colonist.needs.purpose.level).toBe(alone.colonist.needs.purpose.level);
+    expect(withCompany.colonists[0]!.colonist.needs.purpose.level).toBe(alone.colonists[0]!.colonist.needs.purpose.level);
   });
 
   it("scales Social credit and affinity drift to the fraction of food actually consumed (Copilot review fix)", () => {
@@ -349,8 +362,8 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     const final = tick(initial, 1).state;
     const fullFinal = tick(fullInitial, 1).state;
 
-    const partialSocialGain = final.colonist.needs.social.level - initial.colonist.needs.social.level;
-    const fullSocialGain = fullFinal.colonist.needs.social.level - fullInitial.colonist.needs.social.level;
+    const partialSocialGain = final.colonists[0]!.colonist.needs.social.level - initial.colonists[0]!.colonist.needs.social.level;
+    const fullSocialGain = fullFinal.colonists[0]!.colonist.needs.social.level - fullInitial.colonists[0]!.colonist.needs.social.level;
     expect(partialSocialGain).toBeGreaterThan(0);
     expect(partialSocialGain).toBeLessThan(fullSocialGain);
 
@@ -394,7 +407,7 @@ describe("shared meal overlay (Stage 2 Slice 4)", () => {
     const initial = eatingExecutionState([zeke], asymmetric);
     const final = run(initial, 20).finalState;
 
-    expect(final.colonist.needs.social.level).toBeLessThan(initial.colonist.needs.social.level);
+    expect(final.colonists[0]!.colonist.needs.social.level).toBeLessThan(initial.colonists[0]!.colonist.needs.social.level);
     // Sole positive mover on this pair is the overlay's affinityDelta — its absence means the
     // pair's affinity can only have gone down (ordinary atrophy) or stayed flat, never up.
     expect(perspective(final.relationships, "c1", "zeke").affinity).toBeLessThanOrEqual(0);
@@ -434,10 +447,8 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
       ...offerOverrides,
     };
     return {
-      ...base,
-      colonist: withCurrentGoal(base.colonist, goal),
+      ...withOthers(withRuntime(base, { colonist: withCurrentGoal(base.colonists[0]!.colonist, goal) }), [zeke]),
       hasBootstrapped: true,
-      roster: [zeke],
       socialOffers: { offers: [offer], nextOfferSequence: 1 },
     };
   }
@@ -449,7 +460,7 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
     expect(offer.status).toBe("accepted");
     expect(offer.reason).toBeNull();
     expect(offer.resolvedAtTick).toBe(result.state.clock.tick);
-    expect(result.state.execution?.taskId).toBe("conversation");
+    expect(result.state.colonists[0]!.execution?.taskId).toBe("conversation");
     expect(result.events.some((e) => e.kind === "socialOfferResolved" && e.status === "accepted")).toBe(true);
     expect(result.events.some((e) => e.kind === "executionBegun" && e.taskId === "conversation")).toBe(true);
     expect(result.state.prng.draws).toBe(1); // exactly one attributed acceptance draw was spent
@@ -459,22 +470,22 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
     const state = pendingOfferState(7, { respondableAtTick: freeStart + 3, expiresAtTick: freeStart + 6 });
     const afterOne = tick(state, 1);
     expect(afterOne.state.socialOffers.offers[0]!.status).toBe("pending");
-    expect(afterOne.state.execution).toBeNull();
+    expect(afterOne.state.colonists[0]!.execution).toBeNull();
     expect(afterOne.state.prng.draws).toBe(0); // no draw is spent on a not-yet-respondable offer
   });
 
   it("declines (draw at/above the probability): no execution, no Social restore, decline friction in both directions", () => {
     // seed 1's first draw ≈ 0.6271 >= 0.55 → declined via acceptanceDraw
     const before = pendingOfferState(1);
-    const socialBefore = before.colonist.needs.social.level;
+    const socialBefore = before.colonists[0]!.colonist.needs.social.level;
     const result = tick(before, 1);
     const offer = result.state.socialOffers.offers[0]!;
     expect(offer.status).toBe("declined");
     expect(offer.reason).toBe("acceptanceDraw");
-    expect(result.state.execution).toBeNull();
-    expect(result.state.colonist.currentGoal).toBeNull(); // initiator's goal is abandoned, not left dangling
+    expect(result.state.colonists[0]!.execution).toBeNull();
+    expect(result.state.colonists[0]!.colonist.currentGoal).toBeNull(); // initiator's goal is abandoned, not left dangling
     // ADR-18 D7: declined offers never restore Social — it only decayed this tick.
-    expect(result.state.colonist.needs.social.level).toBeLessThan(socialBefore);
+    expect(result.state.colonists[0]!.colonist.needs.social.level).toBeLessThan(socialBefore);
     // ADR-18 D6's decline row: forced-proximity friction, negative, both directions.
     expect(perspective(result.state.relationships, "c1", "zeke").affinity).toBeLessThan(0);
     expect(perspective(result.state.relationships, "zeke", "c1").affinity).toBeLessThan(0);
@@ -500,7 +511,7 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
 
   it("cancels when the offer-creating goal is gone (initiatorUnavailable), with no relationship or Social effect", () => {
     const state = pendingOfferState(7);
-    const withoutGoal = { ...state, colonist: withCurrentGoal(state.colonist, null) };
+    const withoutGoal = withRuntime(state, { colonist: withCurrentGoal(state.colonists[0]!.colonist, null) });
     const result = tick(withoutGoal, 1);
     const offer = result.state.socialOffers.offers[0]!;
     expect(offer.status).toBe("cancelled");
@@ -511,13 +522,12 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
   it("a survivable interruption during the delay window suspends the offer-creating goal and HOLDS the offer pending", () => {
     // Long delay so the interruption (critical hunger) lands inside the window.
     const state = pendingOfferState(7, { respondableAtTick: freeStart + 6, expiresAtTick: freeStart + 12 });
-    const hungry = {
-      ...state,
-      colonist: withNeeds(state.colonist, { ...state.colonist.needs, hunger: { level: 0.1, ticksBelowLow: 50 } } as SimulationState["colonist"]["needs"]),
-    };
+    const hungry = withRuntime(state, {
+      colonist: withNeeds(state.colonists[0]!.colonist, { ...state.colonists[0]!.colonist.needs, hunger: { level: 0.1, ticksBelowLow: 50 } } as ColonistRuntime["colonist"]["needs"]),
+    });
     const afterInterrupt = tick(hungry, 1);
-    expect(afterInterrupt.state.colonist.suspendedGoal?.key).toBe("voluntary:social:conversation:zeke");
-    expect(afterInterrupt.state.suspendedExecution).toBeNull(); // offer-backed suspension parks no execution
+    expect(afterInterrupt.state.colonists[0]!.colonist.suspendedGoal?.key).toBe("voluntary:social:conversation:zeke");
+    expect(afterInterrupt.state.colonists[0]!.suspendedExecution).toBeNull(); // offer-backed suspension parks no execution
     expect(afterInterrupt.state.socialOffers.offers[0]!.status).toBe("pending");
     // The next tick's lifecycle pass holds (step 3) — still pending, no draw spent on it.
     const held = tick(afterInterrupt.state, 1);
@@ -526,17 +536,16 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
 
   it("expires once clock.tick reaches expiresAtTick while the goal is suspended, abandoning the stranded goal", () => {
     const base = pendingOfferState(7);
-    const suspended = suspendGoal(base.colonist.currentGoal!);
+    const suspended = suspendGoal(base.colonists[0]!.colonist.currentGoal!);
     const state: SimulationState = {
-      ...base,
-      colonist: withSuspendedGoal(withCurrentGoal(base.colonist, null), suspended),
+      ...withRuntime(base, { colonist: withSuspendedGoal(withCurrentGoal(base.colonists[0]!.colonist, null), suspended) }),
       socialOffers: { offers: [{ ...base.socialOffers.offers[0]!, expiresAtTick: freeStart + 1 }], nextOfferSequence: 1 },
     };
     const result = tick(state, 1);
     const offer = result.state.socialOffers.offers[0]!;
     expect(offer.status).toBe("expired");
     expect(offer.reason).toBe("timeout");
-    expect(result.state.colonist.suspendedGoal).toBeNull(); // the goal must not later resume into direct execution
+    expect(result.state.colonists[0]!.colonist.suspendedGoal).toBeNull(); // the goal must not later resume into direct execution
     expect(result.state.relationships.pairs).toEqual({}); // expiry applies no relationship effect
   });
 
@@ -615,7 +624,7 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
     // Organic end-to-end: bootstrap → social commit → offer → resolution, then verifyReplay
     // proves the whole thing (traces AND terminal state, socialOffers included) reproduces.
     const freeStartState = stateAtTickOfDay(freeStart, { social: { level: 0.45, ticksBelowLow: 0 }, purpose: { level: 0.5, ticksBelowLow: 0 } }, 31);
-    const initial = { ...freeStartState, roster: [zeke] };
+    const initial = withOthers(freeStartState, [zeke]);
     const final = run(initial, 30).finalState;
     expect(final.socialOffers.offers.length).toBeGreaterThan(0); // sanity: the run really exercised the protocol
     expect(verifyReplay(initial, final).kind).toBe("match");
@@ -654,20 +663,20 @@ describe("goal completion", () => {
 });
 
 describe("goal interruption and resume — preserved execution progress (review fix 1)", () => {
-  function runUntilInterrupted(): { state: SimulationState; interruptedAtElapsedTicks: number; originalVoluntary: NonNullable<SimulationState["colonist"]["currentGoal"]> } {
+  function runUntilInterrupted(): { state: SimulationState; interruptedAtElapsedTicks: number; originalVoluntary: NonNullable<ColonistRuntime["colonist"]["currentGoal"]> } {
     const freeStart = policy.workTicks + policy.restTicks;
     let state = stateAtTickOfDay(freeStart, { hunger: { level: 0.402, ticksBelowLow: 0 } });
 
     let result = tick(state, 1); // bootstrap: voluntary
     state = result.state;
-    const originalVoluntary = state.colonist.currentGoal!;
+    const originalVoluntary = state.colonists[0]!.colonist.currentGoal!;
 
     let interruptedAtElapsedTicks = -1;
     for (let i = 0; i < 50 && interruptedAtElapsedTicks < 0; i++) {
       result = tick(state, 1);
       state = result.state;
       if (result.events.some((e) => e.kind === "higherPriorityCondition")) {
-        interruptedAtElapsedTicks = state.suspendedExecution!.elapsedTicks;
+        interruptedAtElapsedTicks = state.colonists[0]!.suspendedExecution!.elapsedTicks;
       }
     }
     return { state, interruptedAtElapsedTicks, originalVoluntary };
@@ -675,23 +684,23 @@ describe("goal interruption and resume — preserved execution progress (review 
 
   it("a higher-tier need crossing low interrupts a running voluntary goal, retaining goal AND execution as a pair", () => {
     const { state, originalVoluntary } = runUntilInterrupted();
-    expect(state.colonist.suspendedGoal).not.toBeNull();
-    expect(state.colonist.suspendedGoal!.key).toBe(originalVoluntary.key);
-    expect(state.colonist.suspendedGoal!.status).toBe("suspended");
-    expect(state.colonist.suspendedGoal!.motivation).toBe(originalVoluntary.motivation);
-    expect(state.colonist.suspendedGoal!.adoptedAtTick).toBe(originalVoluntary.adoptedAtTick);
-    expect(state.suspendedExecution).not.toBeNull();
-    expect(state.suspendedExecution!.taskId).toBe("idlePresence");
-    expect(state.suspendedExecution!.goalKey).toBe(originalVoluntary.key);
-    expect(state.suspendedExecution!.status).toBe("interrupted");
-    expect(state.colonist.currentGoal?.source).toBe("lowNeed");
-    expect(state.colonist.currentGoal?.relatedNeed).toBe("hunger");
+    expect(state.colonists[0]!.colonist.suspendedGoal).not.toBeNull();
+    expect(state.colonists[0]!.colonist.suspendedGoal!.key).toBe(originalVoluntary.key);
+    expect(state.colonists[0]!.colonist.suspendedGoal!.status).toBe("suspended");
+    expect(state.colonists[0]!.colonist.suspendedGoal!.motivation).toBe(originalVoluntary.motivation);
+    expect(state.colonists[0]!.colonist.suspendedGoal!.adoptedAtTick).toBe(originalVoluntary.adoptedAtTick);
+    expect(state.colonists[0]!.suspendedExecution).not.toBeNull();
+    expect(state.colonists[0]!.suspendedExecution!.taskId).toBe("idlePresence");
+    expect(state.colonists[0]!.suspendedExecution!.goalKey).toBe(originalVoluntary.key);
+    expect(state.colonists[0]!.suspendedExecution!.status).toBe("interrupted");
+    expect(state.colonists[0]!.colonist.currentGoal?.source).toBe("lowNeed");
+    expect(state.colonists[0]!.colonist.currentGoal?.relatedNeed).toBe("hunger");
   });
 
   it("interrupted execution's elapsedTicks is nonzero and frozen while suspended", () => {
     const { state, interruptedAtElapsedTicks } = runUntilInterrupted();
     expect(interruptedAtElapsedTicks).toBeGreaterThan(0);
-    expect(state.suspendedExecution!.elapsedTicks).toBe(interruptedAtElapsedTicks);
+    expect(state.colonists[0]!.suspendedExecution!.elapsedTicks).toBe(interruptedAtElapsedTicks);
   });
 
   it("resuming preserves elapsedTicks exactly — the task never restarts from zero", () => {
@@ -708,14 +717,14 @@ describe("goal interruption and resume — preserved execution progress (review 
         // nothing progressed while suspended, and it is not reset to 0.
         expect(resumeEvent.elapsedTicks).toBe(interruptedAtElapsedTicks);
         expect(resumeEvent.taskId).toBe("idlePresence");
-        expect(state.execution!.elapsedTicks).toBe(interruptedAtElapsedTicks);
-        expect(state.execution!.status).toBe("inProgress");
+        expect(state.colonists[0]!.execution!.elapsedTicks).toBe(interruptedAtElapsedTicks);
+        expect(state.colonists[0]!.execution!.status).toBe("inProgress");
         // Goal identity fully preserved.
-        expect(state.colonist.currentGoal?.key).toBe(originalVoluntary.key);
-        expect(state.colonist.currentGoal?.motivation).toBe(originalVoluntary.motivation);
-        expect(state.colonist.currentGoal?.adoptedAtTick).toBe(originalVoluntary.adoptedAtTick);
-        expect(state.colonist.suspendedGoal).toBeNull();
-        expect(state.suspendedExecution).toBeNull();
+        expect(state.colonists[0]!.colonist.currentGoal?.key).toBe(originalVoluntary.key);
+        expect(state.colonists[0]!.colonist.currentGoal?.motivation).toBe(originalVoluntary.motivation);
+        expect(state.colonists[0]!.colonist.currentGoal?.adoptedAtTick).toBe(originalVoluntary.adoptedAtTick);
+        expect(state.colonists[0]!.colonist.suspendedGoal).toBeNull();
+        expect(state.colonists[0]!.suspendedExecution).toBeNull();
       }
     }
     expect(resumed).toBe(true);
@@ -750,16 +759,13 @@ describe("goal interruption and resume — preserved execution progress (review 
       clock: advance(createClock(), restPeriodTick),
       world: brokenWorld,
       policy,
-      colonist,
-      execution: null,
-      suspendedExecution,
+      colonists: [{ colonist: colonist, execution: null, suspendedExecution: suspendedExecution, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
-      ...createFreshMemoryBaselines(),
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [], socialOffers: createSocialOfferStore(),
+      socialOffers: createSocialOfferStore(),
     };
 
     const result = tick(state, 1);
@@ -768,9 +774,9 @@ describe("goal interruption and resume — preserved execution progress (review 
     expect(result.events.some((e) => e.kind === "executionAborted")).toBe(true);
     expect(result.events.some((e) => e.kind === "executionResumed")).toBe(false); // never silently resumed
     expect(result.events.some((e) => e.kind === "executionBegun")).toBe(false); // never silently restarted fresh either
-    expect(result.state.colonist.currentGoal?.status).toBe("blocked");
-    expect(result.state.execution).toBeNull();
-    expect(result.state.suspendedExecution).toBeNull();
+    expect(result.state.colonists[0]!.colonist.currentGoal?.status).toBe("blocked");
+    expect(result.state.colonists[0]!.execution).toBeNull();
+    expect(result.state.colonists[0]!.suspendedExecution).toBeNull();
   });
 });
 
@@ -815,16 +821,13 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
       clock: advance(createClock(), policy.workTicks + policy.restTicks),
       world: createWorld(),
       policy,
-      colonist,
-      execution: hungerExecution,
-      suspendedExecution: voluntaryExecution,
+      colonists: [{ colonist: colonist, execution: hungerExecution, suspendedExecution: voluntaryExecution, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
-      ...createFreshMemoryBaselines(),
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [], socialOffers: createSocialOfferStore(),
+      socialOffers: createSocialOfferStore(),
     };
 
     const result = tick(state, 1);
@@ -839,17 +842,17 @@ describe("suspension overflow — Goal and Execution handled consistently", () =
 
     // The new suspended slot now holds the hunger goal (the one that was overflowed OUT of
     // being active, not abandoned — it is properly suspended, not discarded).
-    expect(result.state.colonist.suspendedGoal?.key).toBe("lowNeed:hunger");
-    expect(result.state.colonist.suspendedGoal?.status).toBe("suspended");
-    expect(result.state.suspendedExecution?.taskId).toBe("eatAtFoodStation");
+    expect(result.state.colonists[0]!.colonist.suspendedGoal?.key).toBe("lowNeed:hunger");
+    expect(result.state.colonists[0]!.colonist.suspendedGoal?.status).toBe("suspended");
+    expect(result.state.colonists[0]!.suspendedExecution?.taskId).toBe("eatAtFoodStation");
     // 7 (hand-set) + 1 (this tick's own progress phase, which runs before the interruption is
     // detected — execution always advances first) = 8. Preserved thereafter, not reset to 0.
-    expect(result.state.suspendedExecution?.elapsedTicks).toBe(8);
-    expect(result.state.suspendedExecution?.status).toBe("interrupted");
+    expect(result.state.colonists[0]!.suspendedExecution?.elapsedTicks).toBe(8);
+    expect(result.state.colonists[0]!.suspendedExecution?.status).toBe("interrupted");
 
     // The current goal is now the critical rest goal.
-    expect(result.state.colonist.currentGoal?.relatedNeed).toBe("rest");
-    expect(result.state.colonist.currentGoal?.source).toBe("criticalNeed");
+    expect(result.state.colonists[0]!.colonist.currentGoal?.relatedNeed).toBe("rest");
+    expect(result.state.colonists[0]!.colonist.currentGoal?.source).toBe("criticalNeed");
   });
 });
 
@@ -878,14 +881,14 @@ describe("re-decision triggers", () => {
     let state = stateAtTickOfDay(policy.workTicks, { hunger: { level: 0.3, ticksBelowLow: 500 } }); // rest period, hunger low
     let result = tick(state, 1); // adopts+begins eatAtFoodStation
     state = result.state;
-    expect(state.execution?.taskId).toBe("eatAtFoodStation");
+    expect(state.colonists[0]!.execution?.taskId).toBe("eatAtFoodStation");
 
     const brokenWorld = setModuleFunctional(state.world, "foodStation", false);
     state = { ...state, world: brokenWorld };
     result = tick(state, 1);
     expect(result.events.some((e) => e.kind === "blockage")).toBe(true);
     expect(result.events.some((e) => e.kind === "executionAborted")).toBe(true);
-    expect(result.state.colonist.currentGoal?.status).toBe("blocked");
+    expect(result.state.colonists[0]!.colonist.currentGoal?.status).toBe("blocked");
   });
 
   it("re-decision does not happen every tick when nothing changed (no trigger fires while progressing)", () => {
@@ -923,7 +926,7 @@ describe("re-decision triggers", () => {
     let state = stateAtTickOfDay(freeStart, { hunger: { level: 0.402, ticksBelowLow: 0 } });
     let result = tick(state, 1); // bootstrap: voluntary
     state = result.state;
-    const originalVoluntary = state.colonist.currentGoal!;
+    const originalVoluntary = state.colonists[0]!.colonist.currentGoal!;
 
     let interrupted = false;
     for (let i = 0; i < 50 && !interrupted; i++) {
@@ -939,11 +942,11 @@ describe("re-decision triggers", () => {
       state = result.state;
       if (result.events.some((e) => e.kind === "suspensionResolved")) {
         resumed = true;
-        expect(state.colonist.suspendedGoal).toBeNull();
-        expect(state.suspendedExecution).toBeNull();
-        expect(state.colonist.currentGoal?.key).toBe(originalVoluntary.key);
-        expect(state.colonist.currentGoal?.motivation).toBe(originalVoluntary.motivation);
-        expect(state.colonist.currentGoal?.adoptedAtTick).toBe(originalVoluntary.adoptedAtTick);
+        expect(state.colonists[0]!.colonist.suspendedGoal).toBeNull();
+        expect(state.colonists[0]!.suspendedExecution).toBeNull();
+        expect(state.colonists[0]!.colonist.currentGoal?.key).toBe(originalVoluntary.key);
+        expect(state.colonists[0]!.colonist.currentGoal?.motivation).toBe(originalVoluntary.motivation);
+        expect(state.colonists[0]!.colonist.currentGoal?.adoptedAtTick).toBe(originalVoluntary.adoptedAtTick);
       }
     }
     expect(resumed).toBe(true);
@@ -1003,7 +1006,7 @@ describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () =>
     let state = stateWithHungerActiveAndSocialApproachingLow();
     let result = tick(state, 1); // bootstrap: hunger goal adopted
     state = result.state;
-    const originalGoal = state.colonist.currentGoal!;
+    const originalGoal = state.colonists[0]!.colonist.currentGoal!;
     expect(originalGoal.relatedNeed).toBe("hunger");
 
     let sawSocialCrossing = false;
@@ -1016,9 +1019,9 @@ describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () =>
         expect(result.events.some((e) => e.kind === "decision")).toBe(false);
         expect(result.events.some((e) => e.kind === "taskResolution")).toBe(false);
         expect(result.events.some((e) => e.kind === "executionBegun")).toBe(false);
-        expect(state.colonist.currentGoal?.key).toBe(originalGoal.key);
-        expect(state.colonist.currentGoal?.source).toBe("lowNeed");
-        expect(state.colonist.currentGoal?.relatedNeed).toBe("hunger");
+        expect(state.colonists[0]!.colonist.currentGoal?.key).toBe(originalGoal.key);
+        expect(state.colonists[0]!.colonist.currentGoal?.source).toBe("lowNeed");
+        expect(state.colonists[0]!.colonist.currentGoal?.relatedNeed).toBe("hunger");
       }
     }
     expect(sawSocialCrossing).toBe(true);
@@ -1046,15 +1049,15 @@ describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () =>
     let state = stateWithHungerActiveAndSocialApproachingLow();
     let result = tick(state, 1);
     state = result.state;
-    const originalMotivation = state.colonist.currentGoal!.motivation;
-    const originalAdoptedAtTick = state.colonist.currentGoal!.adoptedAtTick;
+    const originalMotivation = state.colonists[0]!.colonist.currentGoal!.motivation;
+    const originalAdoptedAtTick = state.colonists[0]!.colonist.currentGoal!.adoptedAtTick;
 
     for (let i = 0; i < 30; i++) {
       result = tick(state, 1);
       state = result.state;
       if (result.events.some((e) => e.kind === "needThresholdCrossing" && e.needId === "social")) {
-        expect(state.colonist.currentGoal!.motivation).toBe(originalMotivation);
-        expect(state.colonist.currentGoal!.adoptedAtTick).toBe(originalAdoptedAtTick);
+        expect(state.colonists[0]!.colonist.currentGoal!.motivation).toBe(originalMotivation);
+        expect(state.colonists[0]!.colonist.currentGoal!.adoptedAtTick).toBe(originalAdoptedAtTick);
         return;
       }
     }
@@ -1065,18 +1068,18 @@ describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () =>
     let state = stateWithHungerActiveAndSocialApproachingLow();
     let result = tick(state, 1);
     state = result.state;
-    const taskId = state.execution!.taskId;
+    const taskId = state.colonists[0]!.execution!.taskId;
 
     let sawCrossing = false;
     for (let i = 0; i < 30 && !sawCrossing; i++) {
-      const before = state.execution!.elapsedTicks;
+      const before = state.colonists[0]!.execution!.elapsedTicks;
       result = tick(state, 1);
       state = result.state;
-      expect(state.execution!.taskId).toBe(taskId);
-      expect(state.execution!.status).toBe("inProgress");
+      expect(state.colonists[0]!.execution!.taskId).toBe(taskId);
+      expect(state.colonists[0]!.execution!.status).toBe("inProgress");
       // Exactly +1 per tick — no reset, no skip, no jump — even on the tick the same-tier
       // trigger fires.
-      expect(state.execution!.elapsedTicks).toBe(before + 1);
+      expect(state.colonists[0]!.execution!.elapsedTicks).toBe(before + 1);
       sawCrossing = result.events.some((e) => e.kind === "needThresholdCrossing" && e.needId === "social");
     }
     expect(sawCrossing).toBe(true);
@@ -1087,7 +1090,7 @@ describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () =>
     let state = stateAtTickOfDay(freeStart, { hunger: { level: 0.402, ticksBelowLow: 0 } });
     let result = tick(state, 1);
     state = result.state;
-    expect(state.colonist.currentGoal?.source).toBe("voluntary");
+    expect(state.colonists[0]!.colonist.currentGoal?.source).toBe("voluntary");
 
     let interrupted = false;
     for (let i = 0; i < 50 && !interrupted; i++) {
@@ -1096,8 +1099,8 @@ describe("same-tier commitment stickiness (final review fix, 2026-07-10)", () =>
       interrupted = result.events.some((e) => e.kind === "higherPriorityCondition");
     }
     expect(interrupted).toBe(true);
-    expect(state.colonist.currentGoal?.source).toBe("lowNeed");
-    expect(state.colonist.suspendedGoal?.source).toBe("voluntary");
+    expect(state.colonists[0]!.colonist.currentGoal?.source).toBe("lowNeed");
+    expect(state.colonists[0]!.colonist.suspendedGoal?.source).toBe("voluntary");
   });
 
   it("completion still permits a new selection", () => {
@@ -1141,7 +1144,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
   it("rejects goal present / execution missing", () => {
     const base = stateAtTickOfDay(0);
     const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
-    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: null };
+    const state: SimulationState = withRuntime(base, { colonist: withSuspendedGoal(base.colonists[0]!.colonist, goal), suspendedExecution: null });
     expect(() => validateSimulationState(state)).toThrow();
     expect(() => tick(state, 1)).toThrow(); // input boundary rejects it too
   });
@@ -1149,7 +1152,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
   it("rejects execution present / goal missing", () => {
     const base = stateAtTickOfDay(0);
     const exec = interruptExecution(beginExecution(taskDefinition("idlePresence"), commitGoal(voluntaryCandidate, "m", 0), 0));
-    const state: SimulationState = { ...base, suspendedExecution: exec }; // colonist.suspendedGoal stays null
+    const state: SimulationState = withRuntime(base, { suspendedExecution: exec }); // colonist.suspendedGoal stays null
     expect(() => validateSimulationState(state)).toThrow();
     expect(() => tick(state, 1)).toThrow();
   });
@@ -1158,7 +1161,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const base = stateAtTickOfDay(0);
     const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
     const exec = interruptExecution(beginExecution(taskDefinition("idlePresence"), { ...goal, status: "active" }, 0));
-    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: exec };
+    const state: SimulationState = withRuntime(base, { colonist: withSuspendedGoal(base.colonists[0]!.colonist, goal), suspendedExecution: exec });
     expect(() => validateSimulationState(state)).not.toThrow();
   });
 
@@ -1166,7 +1169,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const base = stateAtTickOfDay(0);
     const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
     const mismatchedExec = interruptExecution(beginExecution(taskDefinition("eatAtFoodStation"), commitGoal(hungerCandidate, "m", 0), 0));
-    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: mismatchedExec };
+    const state: SimulationState = withRuntime(base, { colonist: withSuspendedGoal(base.colonists[0]!.colonist, goal), suspendedExecution: mismatchedExec });
     expect(() => validateSimulationState(state)).toThrow();
   });
 
@@ -1174,7 +1177,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const base = stateAtTickOfDay(0);
     const goal = suspendGoal(commitGoal(voluntaryCandidate, "m", 0));
     const stillInProgress = beginExecution(taskDefinition("idlePresence"), { ...goal, status: "active" }, 0); // NOT interrupted
-    const state: SimulationState = { ...base, colonist: withSuspendedGoal(base.colonist, goal), suspendedExecution: stillInProgress };
+    const state: SimulationState = withRuntime(base, { colonist: withSuspendedGoal(base.colonists[0]!.colonist, goal), suspendedExecution: stillInProgress });
     expect(() => validateSimulationState(state)).toThrow();
   });
 
@@ -1182,7 +1185,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const base = stateAtTickOfDay(0);
     const goal = commitGoal(voluntaryCandidate, "m", 0);
     const unrelatedExec = beginExecution(taskDefinition("eatAtFoodStation"), commitGoal(hungerCandidate, "m", 0), 0);
-    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, goal), execution: unrelatedExec };
+    const state: SimulationState = withRuntime(base, { colonist: withCurrentGoal(base.colonists[0]!.colonist, goal), execution: unrelatedExec });
     expect(() => validateSimulationState(state)).toThrow(/goalKey/);
     expect(() => tick(state, 1)).toThrow(); // input boundary rejects it too
   });
@@ -1190,7 +1193,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
   it("REGRESSION (Copilot-confirmed) — active-pair invariant: rejects an execution with no current goal at all", () => {
     const base = stateAtTickOfDay(0);
     const exec = beginExecution(taskDefinition("idlePresence"), commitGoal(voluntaryCandidate, "m", 0), 0);
-    const state: SimulationState = { ...base, execution: exec }; // colonist.currentGoal stays null
+    const state: SimulationState = withRuntime(base, { execution: exec }); // colonist.currentGoal stays null
     expect(() => validateSimulationState(state)).toThrow(/currentGoal is null/);
     expect(() => tick(state, 1)).toThrow();
   });
@@ -1200,7 +1203,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const goal = commitGoal(voluntaryCandidate, "m", 0);
     const exec = beginExecution(taskDefinition("idlePresence"), goal, 0);
     const blocked = { ...goal, status: "blocked" as const };
-    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, blocked), execution: exec };
+    const state: SimulationState = withRuntime(base, { colonist: withCurrentGoal(base.colonists[0]!.colonist, blocked), execution: exec });
     expect(() => validateSimulationState(state)).toThrow(/only an active goal can be executing/);
   });
 
@@ -1208,7 +1211,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const base = stateAtTickOfDay(0);
     const goal = commitGoal(voluntaryCandidate, "m", 0);
     const interrupted = interruptExecution(beginExecution(taskDefinition("idlePresence"), goal, 0));
-    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, goal), execution: interrupted };
+    const state: SimulationState = withRuntime(base, { colonist: withCurrentGoal(base.colonists[0]!.colonist, goal), execution: interrupted });
     expect(() => validateSimulationState(state)).toThrow(/inProgress/);
   });
 
@@ -1216,7 +1219,7 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
     const base = stateAtTickOfDay(0);
     const goal = commitGoal(voluntaryCandidate, "m", 0);
     const exec = beginExecution(taskDefinition("idlePresence"), goal, 0);
-    const state: SimulationState = { ...base, colonist: withCurrentGoal(base.colonist, goal), execution: exec };
+    const state: SimulationState = withRuntime(base, { colonist: withCurrentGoal(base.colonists[0]!.colonist, goal), execution: exec });
     expect(() => validateSimulationState(state)).not.toThrow();
 
     // Organic sanity: a real run's every boundary state already passes through
@@ -1239,8 +1242,8 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       state = result.state;
       validateSimulationState(state); // every tick's output, through interruption and resume
     }
-    expect(state.colonist.suspendedGoal).toBeNull(); // resumed by the end of the window
-    expect(state.suspendedExecution).toBeNull();
+    expect(state.colonists[0]!.colonist.suspendedGoal).toBeNull(); // resumed by the end of the window
+    expect(state.colonists[0]!.suspendedExecution).toBeNull();
 
     // Blockage (separate scenario): breaking a module mid-execution must still leave a valid state.
     let blockageState = stateAtTickOfDay(policy.workTicks, { hunger: { level: 0.3, ticksBelowLow: 500 } });
@@ -1268,16 +1271,13 @@ describe("suspended-pair invariant (review fix 2, 2026-07-10)", () => {
       clock: advance(createClock(), policy.workTicks + policy.restTicks),
       world: createWorld(),
       policy,
-      colonist: overflowColonist,
-      execution: hungerExec,
-      suspendedExecution: voluntaryExec,
+      colonists: [{ colonist: overflowColonist, execution: hungerExec, suspendedExecution: voluntaryExec, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
-      ...createFreshMemoryBaselines(),
       hasBootstrapped: true, // hand-built mid-run precondition — already has an active/suspended goal
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [], socialOffers: createSocialOfferStore(),
+      socialOffers: createSocialOfferStore(),
     };
     validateSimulationState(overflowState); // the hand-built precondition is itself valid
     const overflowResult = tick(overflowState, 1);
@@ -1308,22 +1308,19 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       clock: createClock(),
       world: createWorld(),
       policy,
-      colonist,
-      execution: null,
-      suspendedExecution: null,
+      colonists: [{ colonist: colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
-      ...createFreshMemoryBaselines(),
       hasBootstrapped: false,
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships,
-      roster: [], socialOffers: createSocialOfferStore(),
+      socialOffers: createSocialOfferStore(),
     };
   }
 
   it("a real run path forms a Relational memory once cumulative atrophy drift becomes significant", () => {
     const result = run(seededState(), SIGNIFICANT_TICKS);
-    const relational = result.finalState.colonist.memory.filter((e) => e.type === "relational");
+    const relational = result.finalState.colonists[0]!.colonist.memory.filter((e) => e.type === "relational");
     expect(relational.length).toBeGreaterThan(0);
     expect(relational[0]!.context).toEqual({ otherId: "zeke", direction: "negative" });
   });
@@ -1337,7 +1334,7 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
 
   it("does NOT form a Relational memory while cumulative drift stays below significance", () => {
     const result = run(seededState(), NON_SIGNIFICANT_TICKS);
-    const relational = result.finalState.colonist.memory.filter((e) => e.type === "relational");
+    const relational = result.finalState.colonists[0]!.colonist.memory.filter((e) => e.type === "relational");
     expect(relational).toEqual([]);
     expect(result.events.some((e) => e.kind === "memoryFormed" && e.memoryType === "relational")).toBe(false);
   });
@@ -1348,29 +1345,25 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
       clock: createClock(),
       world: createWorld(),
       policy,
-      colonist,
-      execution: null,
-      suspendedExecution: null,
+      colonists: [{ colonist: colonist, execution: null, suspendedExecution: null, ...createFreshMemoryBaselines() }],
       prng: createPrng(1),
-      ...createFreshMemoryBaselines(),
       hasBootstrapped: false,
       eventLog: createEventLog(),
       decisionLog: createDecisionLog(),
       relationships: createRelationshipStore(),
-      roster: [], socialOffers: createSocialOfferStore(),
+      socialOffers: createSocialOfferStore(),
     };
     const result = run(bare, SIGNIFICANT_TICKS);
-    expect(result.finalState.colonist.memory.filter((e) => e.type === "relational")).toEqual([]);
+    expect(result.finalState.colonists[0]!.colonist.memory.filter((e) => e.type === "relational")).toEqual([]);
   });
 
   it("existing Deprivation/Condition memory formation is unaffected by relationship wiring", () => {
     const base = seededState();
-    const withHunger: SimulationState = {
-      ...base,
-      colonist: withNeeds(base.colonist, { ...createNeeds(), hunger: { level: 0.9, ticksBelowLow: 0 } }),
-    };
+    const withHunger: SimulationState = withRuntime(base, {
+      colonist: withNeeds(base.colonists[0]!.colonist, { ...createNeeds(), hunger: { level: 0.9, ticksBelowLow: 0 } }),
+    });
     const result = run(withHunger, SIGNIFICANT_TICKS);
-    const deprivation = result.finalState.colonist.memory.filter((e) => e.type === "deprivation");
+    const deprivation = result.finalState.colonists[0]!.colonist.memory.filter((e) => e.type === "deprivation");
     expect(deprivation.length).toBeGreaterThan(0); // hunger decay over 800 ticks still forms Deprivation memories as before
   });
 
@@ -1388,41 +1381,40 @@ describe("relational memory formation via real ticks (Stage 2 build step 8, ADR-
   });
 });
 
-describe("multi-colonist roster (Stage 2 Slice 2)", () => {
+describe("colonist collection invariants (Stage 2 Slice 6a, ADR-22 D1/D4)", () => {
   const zeke = { id: "zeke", name: "Zeke", skills: [], baseTraits: [] } as const;
   const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
 
-  function stateWithRoster(roster: SimulationState["roster"]): SimulationState {
-    return { ...stateAtTickOfDay(0), roster };
-  }
-
-  it("a 2-3 colonist roster survives a real tick unchanged — no phase simulates or mutates it", () => {
-    const state = stateWithRoster([zeke, yara]);
+  it("inert non-first entries survive a real tick unchanged — 6a simulates only the canonically-first colonist", () => {
+    const state = withOthers(stateAtTickOfDay(0), [yara, zeke]);
     const result = tick(state, 1);
-    expect(result.state.roster).toEqual([zeke, yara]);
-    expect(result.state.roster).toBe(state.roster); // same reference — never even copied
+    expect(result.state.colonists.length).toBe(3);
+    // yara and zeke's containers are carried through by reference — never simulated or copied in 6a
+    expect(result.state.colonists[1]).toBe(state.colonists[1]);
+    expect(result.state.colonists[2]).toBe(state.colonists[2]);
+    expect(result.state.colonists.map((r) => r.colonist.identity.id)).toEqual(["c1", "yara", "zeke"]);
   });
 
-  it("validateSimulationState rejects a roster entry whose id duplicates the primary colonist's own id", () => {
-    const selfReference = { id: "c1", name: "Impostor", skills: [], baseTraits: [] } as const;
-    const state = stateWithRoster([selfReference]);
-    expect(() => validateSimulationState(state)).toThrow(/duplicates the primary colonist/);
-    expect(() => tick(state, 1)).toThrow();
+  it("validateSimulationState rejects duplicate colonist ids (out-of-order collection)", () => {
+    const base = stateAtTickOfDay(0);
+    const dup = { ...base, colonists: [base.colonists[0]!, base.colonists[0]!] };
+    expect(() => validateSimulationState(dup)).toThrow(/canonical ascending id order/);
+    expect(() => tick(dup, 1)).toThrow();
   });
 
-  it("validateSimulationState rejects two roster entries sharing the same id", () => {
-    const state = stateWithRoster([zeke, { ...yara, id: "zeke" }]);
-    expect(() => validateSimulationState(state)).toThrow(/duplicate id/);
-    expect(() => tick(state, 1)).toThrow();
+  it("validateSimulationState rejects a collection out of canonical order", () => {
+    const state = withOthers(stateAtTickOfDay(0), [zeke]);
+    const reversed = { ...state, colonists: [...state.colonists].reverse() };
+    expect(() => validateSimulationState(reversed)).toThrow(/canonical ascending id order/);
   });
 
-  it("accepts a valid multi-colonist roster with no duplicate or self-referencing ids", () => {
-    const state = stateWithRoster([zeke, yara]);
-    expect(() => validateSimulationState(state)).not.toThrow();
+  it("validateSimulationState rejects an empty collection", () => {
+    const state = { ...stateAtTickOfDay(0), colonists: [] };
+    expect(() => validateSimulationState(state)).toThrow(/non-empty/);
   });
 
-  it("an empty roster (the pre-Slice-2 default) is always valid", () => {
-    const state = stateWithRoster([]);
+  it("accepts a valid multi-entry collection with unique, ordered ids", () => {
+    const state = withOthers(stateAtTickOfDay(0), [zeke, yara]);
     expect(() => validateSimulationState(state)).not.toThrow();
   });
 });

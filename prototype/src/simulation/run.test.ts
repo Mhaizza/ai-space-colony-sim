@@ -11,14 +11,16 @@ describe("createInitialState", () => {
   it("creates a fresh Stage 1 simulation with a satisfied colonist and no execution", () => {
     const state = createInitialState(42, "c1", "Maya", ["engineering"], ["driven"]);
     expect(state.clock.tick).toBe(0);
-    expect(state.execution).toBeNull();
-    expect(state.suspendedExecution).toBeNull();
-    expect(state.colonist.currentGoal).toBeNull();
-    expect(state.colonist.suspendedGoal).toBeNull();
-    expect(state.colonist.identity.skills).toEqual(["engineering"]);
-    expect(state.colonist.identity.baseTraits).toEqual(["driven"]);
+    expect(state.colonists).toHaveLength(1);
+    const runtime = state.colonists[0]!;
+    expect(runtime.execution).toBeNull();
+    expect(runtime.suspendedExecution).toBeNull();
+    expect(runtime.colonist.currentGoal).toBeNull();
+    expect(runtime.colonist.suspendedGoal).toBeNull();
+    expect(runtime.colonist.identity.skills).toEqual(["engineering"]);
+    expect(runtime.colonist.identity.baseTraits).toEqual(["driven"]);
     for (const id of NEEDS) {
-      expect(state.colonist.needs[id].level).toBe(1);
+      expect(runtime.colonist.needs[id].level).toBe(1);
     }
   });
 
@@ -28,15 +30,16 @@ describe("createInitialState", () => {
     expect(a.prng).not.toEqual(b.prng);
   });
 
-  it("defaults to an empty roster (Stage 2 Slice 2) — unchanged Stage 1 behavior", () => {
+  it("defaults to a single-entry collection (ADR-22 D1) — unchanged Stage 1 behavior", () => {
     const state = createInitialState(1, "c1", "Maya");
-    expect(state.roster).toEqual([]);
+    expect(state.colonists.map((r) => r.colonist.identity.id)).toEqual(["c1"]);
   });
 
-  it("accepts an optional roster of other colonists", () => {
+  it("accepts additional colonists, sorted into canonical order as inert runtime containers", () => {
     const roster = [{ id: "zeke", name: "Zeke", skills: [], baseTraits: [] as const }];
     const state = createInitialState(1, "c1", "Maya", [], [], roster);
-    expect(state.roster).toEqual(roster);
+    expect(state.colonists.map((r) => r.colonist.identity.id)).toEqual(["c1", "zeke"]);
+    expect(state.colonists[1]!.execution).toBeNull();
   });
 
   it("clones roster entries at creation so caller mutation cannot change simulation state", () => {
@@ -49,12 +52,15 @@ describe("createInitialState", () => {
     roster[0]!.skills.push("botany");
     roster[0]!.baseTraits = ["gregarious"];
 
-    expect(state.roster).toEqual([{ id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: ["driven"] }]);
+    expect(state.colonists.map((r) => r.colonist.identity)).toEqual([
+      expect.objectContaining({ id: "c1" }),
+      { id: "zeke", name: "Zeke", skills: ["engineering"], baseTraits: ["driven"] },
+    ]);
   });
 
   it("rejects roster ids that would make the initial state invalid", () => {
     expect(() => createInitialState(1, "c1", "Maya", [], [], [{ id: "c1", name: "Clone", skills: [], baseTraits: [] }])).toThrow(
-      /duplicates the primary/i,
+      /canonical ascending id order/i,
     );
     expect(() =>
       createInitialState(1, "c1", "Maya", [], [], [{ id: "__proto__", name: "Prototype", skills: [], baseTraits: [] }]),
@@ -124,7 +130,7 @@ describe("M9 memory formation actually wired into the tick pipeline", () => {
     const result = run(broken, 1000);
     expect(result.events.some((e) => e.kind === "memoryFormed" && e.memoryType === "deprivation")).toBe(true);
     expect(
-      result.finalState.colonist.memory.some((m) => m.type === "deprivation" && m.context.needId === "hunger"),
+      result.finalState.colonists[0]!.colonist.memory.some((m) => m.type === "deprivation" && m.context.needId === "hunger"),
     ).toBe(true);
   });
 });

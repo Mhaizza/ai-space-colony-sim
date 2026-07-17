@@ -92,35 +92,39 @@ import { appendTickRecords, type DecisionLog, type EventLog } from "../records/l
  * explicitly by `validateSimulationState` at tick()'s input and every exit point (review fix
  * 2, 2026-07-10) — malformed state is rejected rather than allowed to silently corrupt.
  */
+/**
+ * One colonist's complete runtime container (ADR-22 D1): the colonist's own state plus the
+ * execution slots and memory-formation baselines that used to live as singular SimulationState
+ * fields. Everything per-colonist lives here; everything shared (clock, world, policy, PRNG,
+ * logs, M10/M12 stores) stays top-level.
+ */
+export interface ColonistRuntime {
+  readonly colonist: ColonistState;
+  readonly execution: Execution | null;
+  readonly suspendedExecution: Execution | null;
+  /** See the field docs below — per-colonist memory-formation trigger-detection baselines. */
+  readonly deprivationBaselines: Readonly<Record<NeedId, number>>;
+  readonly stressBaseline: number;
+  readonly relationshipAffinityBaselines: Readonly<Record<string, number>>;
+}
+
 export interface SimulationState {
   readonly clock: ClockState;
   readonly world: WorldState;
   readonly policy: ShiftPolicy;
-  readonly colonist: ColonistState;
-  readonly execution: Execution | null;
-  readonly suspendedExecution: Execution | null;
+  /**
+   * ADR-22 D1: the one authoritative colonist list — a canonically ordered (ordinal id order)
+   * collection of per-colonist runtime containers, replacing the former singular
+   * `colonist`/`execution`/`suspendedExecution`/baseline slots AND the identity-only `roster`.
+   *
+   * ponytail: 6a transitional semantics — tick() simulates ONLY the canonically-first entry
+   * (`colonists[0]`); the remaining entries are carried through untouched and observed via the
+   * same fixed `"resting"` placeholder the retired roster used, preserving pre-migration
+   * behavior bit-identically. Sub-slice 6b replaces this with the design's D2/D3 full loop
+   * (all entries simulated, real observation basis) — that is the 6a→6b diff, by design.
+   */
+  readonly colonists: readonly ColonistRuntime[];
   readonly prng: PrngState;
-  /**
-   * Memory-formation trigger-detection state (tick.ts's job — see module doc): the high-water
-   * mark each need has held since it was last satisfied (or since a Deprivation memory last
-   * formed from it), and the stress level as of the last Condition memory (or arrival). A
-   * single tick's decay/stress movement is far below memory.ts's significance thresholds by
-   * design (M6/M7 tuning) — these baselines are what let cumulative movement across many ticks
-   * actually reach them, the way a real run is meant to form memories.
-   */
-  readonly deprivationBaselines: Readonly<Record<NeedId, number>>;
-  readonly stressBaseline: number;
-  /**
-   * Build step 8: the same cumulative-baseline pattern as `stressBaseline`, one entry per
-   * relationship partner this colonist has been observed to be party to — the affinity value
-   * (this colonist's own directional perspective) as of the last time a Relational memory
-   * formed from it (or as of first observing the pair). A single tick's atrophy movement is far
-   * below memory.ts's significance threshold by design; this is what lets cumulative drift
-   * across many ticks actually reach it, exactly like the need/stress baselines above. Keyed by
-   * the other colonist's id — never by `RelationshipStore`'s own keys/history, which this module
-   * still never reads directly.
-   */
-  readonly relationshipAffinityBaselines: Readonly<Record<string, number>>;
   /**
    * Whether tick() has ever run for this state before (review fix, cross-referenced Copilot
    * finding). Starts `false` only in a genuinely fresh `createInitialState` result; every call
@@ -145,18 +149,6 @@ export interface SimulationState {
    * consequences through — M10 remains the sole owner of the store's shape and rules.
    */
   readonly relationships: RelationshipStore;
-  /**
-   * Stage 2 Slice 2 — a minimal multi-colonist roster: identity-only records for colonists
-   * other than the simulated `colonist`, fixed at creation and never touched by any tick()
-   * phase. This is deliberately NOT a second `ColonistState` per entry: no needs/stress/memory/
-   * decision simulation exists for roster members yet (that is Stage 3-scale work, out of
-   * scope here). Its entire purpose is letting a relationship pair's second party be a *known*
-   * colonist id, so the relationship store can materialize, serialize, and replay a real
-   * two-party pair instead of only ever rejecting one as "unknown colonist id" (build step 3's
-   * documented limitation). tick.ts threads this through unchanged — it is not a decision input
-   * (nearbyColonists/candidate generation remain their own, separately-approved concern).
-   */
-  readonly roster: readonly ColonistIdentity[];
   /**
    * Stage 2 Slice 5 — M12's social offer store (ADR-21 D1): the ADR-18 D5 offer/response
    * protocol's persisted state for Conversation and Shared Downtime. Offers are created at
@@ -231,8 +223,39 @@ export interface TickResult {
  * corrupt downstream logic.
  */
 export function validateSimulationState(state: SimulationState): void {
-  const { suspendedGoal, currentGoal } = state.colonist;
-  const { suspendedExecution, execution } = state;
+  // Collection invariants (ADR-22 D1/D4): non-empty, safe unique ids, canonical ascending
+  // (ordinal) id order. The collection is the one authoritative colonist list — the same
+  // "known colonist" rules the retired roster carried now live here.
+  if (state.colonists.length === 0) {
+    throw new Error("Invalid SimulationState: colonists must be non-empty — a simulation with no colonists is not a state this system produces.");
+  }
+  let previousId: string | null = null;
+  for (const runtime of state.colonists) {
+    const id = runtime.colonist.identity.id;
+    assertSafeColonistId(id, "colonists[].colonist.identity.id");
+    if (previousId !== null && !(previousId < id)) {
+      throw new Error(
+        `Invalid SimulationState: colonists must be in canonical ascending id order with unique ids — got "${id}" after "${previousId}".`,
+      );
+    }
+    previousId = id;
+  }
+  const knownIds = new Set(state.colonists.map((r) => r.colonist.identity.id));
+
+  for (const runtime of state.colonists) {
+    validateColonistRuntime(runtime, knownIds, state.socialOffers);
+  }
+}
+
+/** Per-container invariants (ADR-22 Invariant 3) — the exact rules that governed the singular slots, applied per entry. */
+function validateColonistRuntime(
+  runtime: ColonistRuntime,
+  knownIds: ReadonlySet<string>,
+  socialOffers: SocialOfferStore,
+): void {
+  const ownId = runtime.colonist.identity.id;
+  const { suspendedGoal, currentGoal } = runtime.colonist;
+  const { suspendedExecution, execution } = runtime;
 
   if (execution !== null) {
     if (execution.status !== "inProgress") {
@@ -271,7 +294,7 @@ export function validateSimulationState(state: SimulationState): void {
     const offerBackedSuspension =
       suspendedGoal !== null &&
       suspendedExecution === null &&
-      state.socialOffers.offers.some((o) => o.status === "pending" && offerGoalKey(o) === suspendedGoal.key);
+      socialOffers.offers.some((o) => o.status === "pending" && offerGoalKey(o) === suspendedGoal.key);
     if (!offerBackedSuspension) {
       throw new Error(
         "Invalid SimulationState: suspendedGoal and suspendedExecution must both be null or both be " +
@@ -297,27 +320,9 @@ export function validateSimulationState(state: SimulationState): void {
     }
   }
 
-  // Roster invariant (Stage 2 Slice 2): every roster entry's id must be distinct from the
-  // primary colonist's and from every other roster entry's — a duplicate id would make a
-  // relationship pair's "known colonist" ambiguous between the simulated colonist and a
-  // roster placeholder (or between two roster placeholders).
-  assertSafeColonistId(state.colonist.identity.id, "colonist.identity.id");
-  const rosterIds = state.roster.map((r) => r.id);
-  if (rosterIds.includes(state.colonist.identity.id)) {
-    throw new Error(
-      `Invalid SimulationState: roster contains "${state.colonist.identity.id}", which duplicates the primary colonist's own id.`,
-    );
-  }
-  const seenRosterIds = new Set<string>();
-  for (const id of rosterIds) {
-    assertSafeColonistId(id, "roster id");
-    if (seenRosterIds.has(id)) {
-      throw new Error(`Invalid SimulationState: roster contains duplicate id "${id}".`);
-    }
-    seenRosterIds.add(id);
-  }
-
-  const knownRosterIds = new Set(rosterIds);
+  // Social-goal target invariant (formerly the roster-reference rule, retargeted to the
+  // collection per ADR-22 D4): a goal's relatedColonistId must name a DIFFERENT colonist that
+  // exists in the collection.
   for (const [field, goal] of [
     ["currentGoal", currentGoal],
     ["suspendedGoal", suspendedGoal],
@@ -325,11 +330,11 @@ export function validateSimulationState(state: SimulationState): void {
     const targetId = goal?.relatedColonistId;
     if (targetId === undefined) continue;
     assertSafeColonistId(targetId, `${field}.relatedColonistId`);
-    if (targetId === state.colonist.identity.id) {
-      throw new Error(`Invalid SimulationState: ${field}.relatedColonistId must not target the primary colonist's own id.`);
+    if (targetId === ownId) {
+      throw new Error(`Invalid SimulationState: ${field}.relatedColonistId must not target the goal owner's own id.`);
     }
-    if (!knownRosterIds.has(targetId)) {
-      throw new Error(`Invalid SimulationState: ${field}.relatedColonistId "${targetId}" is not present in the roster.`);
+    if (!knownIds.has(targetId)) {
+      throw new Error(`Invalid SimulationState: ${field}.relatedColonistId "${targetId}" is not present in the colonist collection.`);
     }
   }
 }
@@ -353,7 +358,7 @@ function finish(state: SimulationState, events: readonly TickEvent[]): TickResul
 
 /** Fresh memory-formation baselines for a newly arrived colonist: needs at 1 (matches createNeeds), stress at 0 (matches createStress), no relationship partners observed yet. */
 export function createFreshMemoryBaselines(): Pick<
-  SimulationState,
+  ColonistRuntime,
   "deprivationBaselines" | "stressBaseline" | "relationshipAffinityBaselines"
 > {
   const deprivationBaselines = {} as Record<NeedId, number>;
@@ -536,6 +541,15 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   }
   validateSimulationState(state); // input boundary — reject malformed state before processing it
 
+  // ponytail: 6a transitional — exactly ONE colonist is simulated: the canonically-first entry
+  // (which, for every state this migration step produces, is the same colonist the singular
+  // slots used to hold). The remaining entries are carried through untouched and observed via
+  // the same fixed "resting" placeholder the retired roster used, preserving pre-migration
+  // behavior bit-identically. Sub-slice 6b replaces this with the design's D2/D3 full loop.
+  const active = state.colonists[0]!; // validate guarantees non-empty
+  const restRuntimes = state.colonists.slice(1);
+  const restIdentities = restRuntimes.map((r) => r.colonist.identity);
+
   const events: TickEvent[] = [];
 
   // --- Phase: time advance ---
@@ -543,15 +557,15 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   const clock = advance(state.clock, deltaTicks);
 
   // --- Phase: colonist continuous state (needs, stress) ---
-  const traits = state.colonist.identity.baseTraits;
-  const needsBefore = state.colonist.needs;
+  const traits = active.colonist.identity.baseTraits;
+  const needsBefore = active.colonist.needs;
   const decayedNeeds = decayNeeds(needsBefore, deltaTicks, traits);
   events.push(...detectNeedThresholdCrossings(needsBefore, decayedNeeds, traits));
 
-  const stressBefore = state.colonist.stress;
-  const isWorking = state.execution !== null && state.execution.status === "inProgress" && state.execution.taskId === "workAtWorkstation";
+  const stressBefore = active.colonist.stress;
+  const isWorking = active.execution !== null && active.execution.status === "inProgress" && active.execution.taskId === "workAtWorkstation";
   const stressResult = evaluateStress(stressBefore, decayedNeeds, deltaTicks, traits, isWorking);
-  let colonist = withStress(withNeeds(state.colonist, decayedNeeds), stressResult.state);
+  let colonist = withStress(withNeeds(active.colonist, decayedNeeds), stressResult.state);
   // Retained, not discarded (Copilot-confirmed defect): decision-loop.md:192's hard
   // traceability requirement is "every stress movement must be decomposable into its sources in
   // the inspector" — evaluateStress already computes that decomposition every call, but it was
@@ -561,8 +575,8 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     events.push({ kind: "stressEvaluated", contributions: stressResult.contributions });
   }
   let world = state.world;
-  let execution = state.execution;
-  let suspendedExecution = state.suspendedExecution;
+  let execution = active.execution;
+  let suspendedExecution = active.suspendedExecution;
   let relationships = state.relationships;
   const relationshipConsequences: RelationshipConsequence[] = [];
 
@@ -571,7 +585,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // below), so it must not exempt the pair from atrophy as if a shared meal occurred.
   const activeSharedMealPartner =
     execution?.status === "inProgress" && execution.taskId === "eatAtFoodStation" && world.foodStock > 0
-      ? sharedMealPartnerId(state.roster, colonist.identity.id, relationships)
+      ? sharedMealPartnerId(restIdentities, colonist.identity.id, relationships)
       : undefined;
   const activeSocialPartner = execution?.status === "inProgress" ? (colonist.currentGoal?.relatedColonistId ?? activeSharedMealPartner) : undefined;
   const activeSocialPair =
@@ -661,7 +675,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // --- Phase: condition & trigger detection input (the one snapshot this tick reads through).
   // Built here — after execution consequences have settled the world — so both the social
   // offer lifecycle pass below and the trigger/decision phases read the same fixed view.
-  const snapshot = buildSnapshot(clock, state.policy, world, rosterObservations(state.roster));
+  const snapshot = buildSnapshot(clock, state.policy, world, rosterObservations(restIdentities));
 
   // --- Phase: social offer lifecycle (Stage 2 Slice 5 — design D3's Phase 6 steps, ADR-21).
   // Every pending offer is examined in ascending id order: expiry → cancellation → hold →
@@ -728,7 +742,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     // 4 — not yet respondable: the one-tick-minimum response delay (design D3).
     if (clock.tick < offer.respondableAtTick) continue;
     // 5 — responder eligibility (design D4: snapshot facts and directional perspectives only).
-    if (!state.roster.some((r) => r.id === offer.responderId)) {
+    if (!restIdentities.some((r) => r.id === offer.responderId)) {
       // No friction: an absent responder is not a known colonist to hold a pair with.
       resolved("declined", "responderNotInRoster");
       abandonInitiatorGoal();
@@ -777,7 +791,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // baseline vs current level is offered to considerDeprivationFormation, which no-ops below
   // significance. Same pattern for stress against a single running baseline (rising or falling).
   let memory = colonist.memory;
-  let deprivationBaselines = state.deprivationBaselines;
+  let deprivationBaselines = active.deprivationBaselines;
   for (const id of NEEDS) {
     const level = colonist.needs[id].level;
     if (isSatisfied(id, level) || level > deprivationBaselines[id]) {
@@ -792,7 +806,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
     }
   }
 
-  let stressBaseline = state.stressBaseline;
+  let stressBaseline = active.stressBaseline;
   const conditionFormed = considerConditionFormation(memory, clock.tick, stressBaseline, colonist.stress.level);
   if (conditionFormed !== memory) {
     memory = conditionFormed;
@@ -806,7 +820,7 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // affinity fields — never the store's materialized records or their past-interaction log
   // (M10 remains the sole owner of that shape and those rules). Baselines track cumulative
   // movement per partner, the same pattern as `stressBaseline`.
-  let relationshipAffinityBaselines = state.relationshipAffinityBaselines;
+  let relationshipAffinityBaselines = active.relationshipAffinityBaselines;
   for (const consequence of relationshipConsequences) {
     const [min, max] = consequence.pair;
     const ownerIsMin = min === colonist.identity.id;
@@ -907,8 +921,9 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   if (!triggered) {
     return finish(
       {
-        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster, socialOffers,
+        clock, world, policy: state.policy,
+        colonists: [{ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }, ...restRuntimes],
+        prng, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, socialOffers,
       },
       events,
     );
@@ -928,8 +943,9 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   if (!resumeFromSuspension && !wasInterruption && colonist.currentGoal !== null && colonist.currentGoal.status === "active") {
     return finish(
       {
-        clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-        deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster, socialOffers,
+        clock, world, policy: state.policy,
+        colonists: [{ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }, ...restRuntimes],
+        prng, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, socialOffers,
       },
       events,
     );
@@ -1017,8 +1033,9 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
 
   return finish(
     {
-      clock, world, policy: state.policy, colonist, execution, suspendedExecution, prng,
-      deprivationBaselines, stressBaseline, relationshipAffinityBaselines, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, roster: state.roster, socialOffers,
+      clock, world, policy: state.policy,
+      colonists: [{ colonist, execution, suspendedExecution, deprivationBaselines, stressBaseline, relationshipAffinityBaselines }, ...restRuntimes],
+      prng, hasBootstrapped, eventLog: state.eventLog, decisionLog: state.decisionLog, relationships, socialOffers,
     },
     events,
   );
