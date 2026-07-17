@@ -1,6 +1,6 @@
 # ADR-21 - Social Offer State Storage
 
-**Status:** Proposed (revised 2026-07-17 per architecture review rejection: closed `reason` vocabulary, exhaustive status-field validity matrix, decision-input boundary made internally consistent; awaiting re-review)
+**Status:** Accepted (architecture review + Human acceptance 2026-07-17, issue #125; revised once during review: closed `reason` vocabulary, exhaustive status-field validity matrix, decision-input boundary made internally consistent)
 **Date:** 2026-07-17
 **Phase:** Phase 3 - Stage 2 Slice 5 architecture gate
 **Deciders:** Project owner, Technical Architect
@@ -202,7 +202,7 @@ One owner (M12), one atomic update surface, additive serialization following ADR
 ## Kanban Update
 
 **Card:** [Phase 3] ADR-21 - Social Offer State Storage
-**Status:** Review - revised per architecture review rejection 2026-07-17, awaiting re-review and Human acceptance per issue #125.
+**Status:** Done - architecture review passed and Human acceptance recorded on issue #125 (2026-07-17); status flipped to Accepted.
 **Completed:** Drafted and revised `ai-studio/adr/0021-social-offer-state-storage.md` covering exactly the Data model / Save format / Serialization trigger surface of the approved offer/response design: store ownership and shape (D1-D2, now with a closed seven-member `OfferResolutionReason` union and an exhaustive status-field validity matrix), persisted-counter identity and processing order (D3), bounded retention with the resolved-offers-never-a-decision-input boundary (D4), serialization and the full row-by-row load-rejection list (D5), replay/inspection surfaces (D6), nine required invariants, four options considered, and pre-implementation validation requirements.
 **Changed Files:**
   CREATED  ai-studio/adr/0021-social-offer-state-storage.md
