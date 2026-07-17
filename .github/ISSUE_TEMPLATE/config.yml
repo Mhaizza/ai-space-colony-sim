@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: AI Workflow Pack
+    url: ../docs/ai-workflow/README.md
+    about: Start here for the standard planner / implementer / reviewer / closeout workflow.

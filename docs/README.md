@@ -5,6 +5,14 @@
 
 Reference material, onboarding guides, the project roadmap, and process documentation that doesn't belong in a more specific directory.
 
+## Start Here
+
+For the standard AI agent workflow used in this repository, start with:
+
+- [`ai-workflow/README.md`](./ai-workflow/README.md) - practical entrypoint
+- [`ai-workflow/operating-model.md`](./ai-workflow/operating-model.md) - full workflow rules
+- [`ai-workflow/prompt-pack.md`](./ai-workflow/prompt-pack.md) - ready-to-copy prompts
+
 ## Files (expected)
 
 | File | Contents |
