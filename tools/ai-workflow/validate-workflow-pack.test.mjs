@@ -13,16 +13,38 @@ const SCRIPT_PATH = fileURLToPath(new URL("./validate-workflow-pack.mjs", import
 const VALID_CONTENT = {
   "ai-studio/AI_STUDIO_BOOT.md": "# AI Studio Boot Sequence\n\nRead this file first.\n",
   "ai-studio/SYSTEM_MAP.md": "# System Map\n\nRegisters `docs/ai-workflow/` as a Tier 2 subordinate extension.\n",
-  "AGENTS.md": "# Agents\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Routing\nPlanner Implementer Reviewer Workflow Operator\n",
-  "CLAUDE.md": "# Claude\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Selection\nImplementer\n",
-  "CONTRIBUTING.md": "# Contributing\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\nSee [workflow](./docs/ai-workflow/README.md).\n\n## AI Workers\n",
-  "docs/README.md": "# Docs\n\nSee [workflow](./ai-workflow/README.md).\n",
+  "AGENTS.md":
+    "# Agents\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+    "Read `docs/ai-workflow/README.md`.\n" +
+    "Read `docs/ai-workflow/operating-model.md`.\n" +
+    "Read `docs/ai-workflow/prompt-pack.md`.\n" +
+    "Read `CONTRIBUTING.md`.\n\n## Role Routing\nPlanner Implementer Reviewer Workflow Operator\n",
+  "CLAUDE.md":
+    "# Claude\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+    "Read `docs/ai-workflow/README.md`.\n" +
+    "Read `docs/ai-workflow/operating-model.md`.\n" +
+    "Read `docs/ai-workflow/prompt-pack.md`.\n" +
+    "Read `CONTRIBUTING.md`.\n\n## Role Selection\nImplementer\n",
+  "CONTRIBUTING.md":
+    "# Contributing\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+    "See [workflow](./docs/ai-workflow/README.md).\n" +
+    "See [model](./docs/ai-workflow/operating-model.md).\n" +
+    "See [prompts](./docs/ai-workflow/prompt-pack.md).\n\n## AI Workers\n",
+  "docs/README.md":
+    "# Docs\n\nAgents read `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+    "- [`ai-workflow/README.md`](./ai-workflow/README.md)\n" +
+    "- [`ai-workflow/operating-model.md`](./ai-workflow/operating-model.md)\n" +
+    "- [`ai-workflow/prompt-pack.md`](./ai-workflow/prompt-pack.md)\n",
   "docs/ai-workflow/README.md": "# AI Workflow Pack\n\n[Model](./operating-model.md) [Prompts](./prompt-pack.md) [Task](./task-template.md) [Start](./start-task-template.md) [PR](./pr-summary-template.md) [Review](./review-template.md) [Done](./done-update-template.md)\n",
   "docs/ai-workflow/operating-model.md": "# AI Agent Operating Model\n\n## Authority Hierarchy\n1. Agents read `ai-studio/AI_STUDIO_BOOT.md` first.\n2. This workflow pack supplements those sources.\n3. During Boot Step 8, use this pack.\n\n## Core Laws\n### Law 1 - No Card, No Work\n### Law 2 - One Card, One Owner\n### Law 3 - Authority First\n### Law 4 - No Silent Scope Expansion\n### Law 5 - Review Before Merge\n### Law 6 - Findings First\n### Law 7 - Exact Next Step\n## Roles\n### Planner\n### Implementer\n### Reviewer\n### Workflow Operator\n### Human Owner\n",
   "docs/ai-workflow/prompt-pack.md": "# Prompt Pack\n\n## 1. Planner\n## 2. Implementer\n## 3. Reviewer\n## 4. Workflow Operator\n",
   "docs/ai-workflow/task-template.md": "# Task Template\nTitle:\nGoal:\nIn Scope:\nOut of Scope:\nDependencies:\nAuthority:\nRisks:\nAcceptance Criteria:\nRequired Validation:\nWorkflow Gates:\nExact Next Step:\n",
   "docs/ai-workflow/start-task-template.md": "# Start Task Template\nTask:\nGoal:\nAcceptance Criteria:\nFiles Expected To Change:\nDependencies:\nAuthority:\nRisks:\nEstimated Deliverables:\nExact Stop Condition:\n",
-  "docs/ai-workflow/pr-summary-template.md": "# PR Summary Template\nSummary\nScope\nAuthority\nChanges\nNot Changed\nValidation\n- `npm --prefix prototype test`:\n- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:\nRisks / Notes\nWorkflow\n",
+  "docs/ai-workflow/pr-summary-template.md":
+    "# PR Summary Template\n## Summary\n## Scope\n## Authority\n## Changes\n## Not Changed\n## Validation\n" +
+    "- `npm --prefix prototype test`:\n" +
+    "- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:\n" +
+    "## Risks / Notes\n## Workflow\n",
   "docs/ai-workflow/review-template.md": "# Review Template\nFindings:\nOpen Questions / Assumptions:\nVerdict:\nReason:\nRequired Fixes:\nWorkflow State:\nExact Next Step:\n",
   "docs/ai-workflow/done-update-template.md": "# Done Update Template\nCard:\nStatus: Done\nCompleted:\nChanged Files:\nValidation:\nPipeline Trail:\nScope Delivered:\nScope Not Delivered:\nFollow-up Tasks:\nExact Next Step:\n",
   ".github/ISSUE_TEMPLATE/feature-card.md": "---\nname: Feature Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
@@ -80,13 +102,66 @@ test("requires AI Studio boot authority file", () => {
 test("requires agent entrypoints to reference AI Studio boot", () => {
   withFixture({
     overrides: {
-      "AGENTS.md": "# Agents\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Routing\n",
+      "AGENTS.md":
+        "# Agents\n\nRead `docs/ai-workflow/README.md`.\n" +
+        "Read `docs/ai-workflow/operating-model.md`.\n" +
+        "Read `docs/ai-workflow/prompt-pack.md`.\n" +
+        "Read `CONTRIBUTING.md`.\n\n## Role Routing\n",
     },
   }, (root) => {
     assert.ok(validateWorkflowPack(root).findings.some((finding) =>
       finding.file === "AGENTS.md" &&
       finding.ruleId === "entrypoint.boot" &&
       finding.message.includes("ai-studio/AI_STUDIO_BOOT.md")
+    ));
+  });
+});
+
+test("requires explicit entrypoint read-order targets", () => {
+  withFixture({
+    overrides: {
+      "AGENTS.md":
+        "# Agents\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+        "See the pack under `docs/ai-workflow/`.\n\n## Role Routing\n",
+    },
+  }, (root) => {
+    const findings = validateWorkflowPack(root).findings;
+    assert.ok(findings.some((finding) =>
+      finding.file === "AGENTS.md" &&
+      finding.ruleId === "entrypoint.reference" &&
+      finding.message.includes("docs/ai-workflow/README.md")
+    ));
+    assert.ok(findings.some((finding) =>
+      finding.file === "AGENTS.md" &&
+      finding.ruleId === "entrypoint.reference" &&
+      finding.message.includes("docs/ai-workflow/operating-model.md")
+    ));
+    assert.ok(findings.some((finding) =>
+      finding.file === "AGENTS.md" &&
+      finding.ruleId === "entrypoint.reference" &&
+      finding.message.includes("docs/ai-workflow/prompt-pack.md")
+    ));
+    assert.ok(findings.some((finding) =>
+      finding.file === "AGENTS.md" &&
+      finding.ruleId === "entrypoint.reference" &&
+      finding.message.includes("CONTRIBUTING.md")
+    ));
+  });
+});
+
+test("requires docs index routing to workflow pack files", () => {
+  withFixture({
+    overrides: {
+      "docs/README.md":
+        "# Docs\n\nAgents read `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+        "- [`ai-workflow/README.md`](./ai-workflow/README.md)\n" +
+        "- [`ai-workflow/operating-model.md`](./ai-workflow/operating-model.md)\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "docs/README.md" &&
+      finding.ruleId === "docs-index.routing" &&
+      finding.message.includes("ai-workflow/prompt-pack.md")
     ));
   });
 });
@@ -176,12 +251,49 @@ test("reports a missing lifecycle template field", () => {
   });
 });
 
+test("rejects title-only substring collisions for template fields", () => {
+  withFixture({
+    overrides: {
+      "docs/ai-workflow/pr-summary-template.md":
+        "# PR Summary Template\n## Scope\n## Authority\n## Changes\n## Not Changed\n## Validation\n" +
+        "- `npm --prefix prototype test`:\n" +
+        "- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:\n" +
+        "## Risks / Notes\n## Workflow\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "docs/ai-workflow/pr-summary-template.md" &&
+      finding.ruleId === "template.field" &&
+      finding.message.includes("## Summary")
+    ));
+  });
+});
+
 test("reports a broken local Markdown link", () => {
   withFixture({ overrides: { "docs/README.md": "# Docs\n\n[Missing](./missing.md)\n" } }, (root) => {
     assert.ok(validateWorkflowPack(root).findings.some((finding) =>
       finding.file === "docs/README.md" &&
       finding.ruleId === "markdown.local-link" &&
       finding.message.includes("missing.md")
+    ));
+  });
+});
+
+test("reports a broken reference-style Markdown link", () => {
+  withFixture({
+    overrides: {
+      "docs/README.md":
+        "# Docs\n\nAgents read `ai-studio/AI_STUDIO_BOOT.md` first.\n\n" +
+        "- [readme][workflow-readme]\n" +
+        "- [`ai-workflow/operating-model.md`](./ai-workflow/operating-model.md)\n" +
+        "- [`ai-workflow/prompt-pack.md`](./ai-workflow/prompt-pack.md)\n\n" +
+        "[workflow-readme]: ./ai-workflow/missing-reference.md\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "docs/README.md" &&
+      finding.ruleId === "markdown.local-link" &&
+      finding.message.includes("missing-reference.md")
     ));
   });
 });

@@ -45,18 +45,56 @@ const TOKEN_RULES = Object.freeze([
   ["AGENTS.md", "entrypoint.boot", ["ai-studio/AI_STUDIO_BOOT.md"]],
   ["CLAUDE.md", "entrypoint.boot", ["ai-studio/AI_STUDIO_BOOT.md"]],
   ["CONTRIBUTING.md", "entrypoint.boot", ["ai-studio/AI_STUDIO_BOOT.md"]],
-  ["AGENTS.md", "entrypoint.reference", ["docs/ai-workflow/", "Role Routing"]],
-  ["CLAUDE.md", "entrypoint.reference", ["docs/ai-workflow/", "Role Selection"]],
-  ["CONTRIBUTING.md", "entrypoint.reference", ["docs/ai-workflow/", "AI Workers"]],
+  ["AGENTS.md", "entrypoint.reference", [
+    "docs/ai-workflow/README.md",
+    "docs/ai-workflow/operating-model.md",
+    "docs/ai-workflow/prompt-pack.md",
+    "CONTRIBUTING.md",
+    "Role Routing",
+  ]],
+  ["CLAUDE.md", "entrypoint.reference", [
+    "docs/ai-workflow/README.md",
+    "docs/ai-workflow/operating-model.md",
+    "docs/ai-workflow/prompt-pack.md",
+    "CONTRIBUTING.md",
+    "Role Selection",
+  ]],
+  ["CONTRIBUTING.md", "entrypoint.reference", [
+    "docs/ai-workflow/README.md",
+    "docs/ai-workflow/operating-model.md",
+    "docs/ai-workflow/prompt-pack.md",
+    "AI Workers",
+  ]],
+  ["docs/README.md", "docs-index.routing", [
+    "ai-studio/AI_STUDIO_BOOT.md",
+    "ai-workflow/README.md",
+    "ai-workflow/operating-model.md",
+    "ai-workflow/prompt-pack.md",
+  ]],
   ["ai-studio/SYSTEM_MAP.md", "system-map.workflow-pack", ["docs/ai-workflow/"]],
 ]);
 
 const TEMPLATE_RULES = Object.freeze([
-  ["docs/ai-workflow/task-template.md", ["Title:", "Goal:", "In Scope:", "Out of Scope:", "Dependencies:", "Authority:", "Risks:", "Acceptance Criteria:", "Required Validation:", "Workflow Gates:", "Exact Next Step:"]],
-  ["docs/ai-workflow/start-task-template.md", ["Task:", "Goal:", "Acceptance Criteria:", "Files Expected To Change:", "Dependencies:", "Authority:", "Risks:", "Estimated Deliverables:", "Exact Stop Condition:"]],
-  ["docs/ai-workflow/pr-summary-template.md", ["Summary", "Scope", "Authority", "Changes", "Not Changed", "Validation", "Risks / Notes", "Workflow"]],
-  ["docs/ai-workflow/review-template.md", ["Findings:", "Open Questions / Assumptions:", "Verdict:", "Reason:", "Required Fixes:", "Workflow State:", "Exact Next Step:"]],
-  ["docs/ai-workflow/done-update-template.md", ["Card:", "Status: Done", "Completed:", "Changed Files:", "Validation:", "Pipeline Trail:", "Scope Delivered:", "Scope Not Delivered:", "Follow-up Tasks:", "Exact Next Step:"]],
+  ["docs/ai-workflow/task-template.md", [
+    "Title:", "Goal:", "In Scope:", "Out of Scope:", "Dependencies:", "Authority:", "Risks:",
+    "Acceptance Criteria:", "Required Validation:", "Workflow Gates:", "Exact Next Step:",
+  ]],
+  ["docs/ai-workflow/start-task-template.md", [
+    "Task:", "Goal:", "Acceptance Criteria:", "Files Expected To Change:", "Dependencies:",
+    "Authority:", "Risks:", "Estimated Deliverables:", "Exact Stop Condition:",
+  ]],
+  ["docs/ai-workflow/pr-summary-template.md", [
+    "## Summary", "## Scope", "## Authority", "## Changes", "## Not Changed",
+    "## Validation", "## Risks / Notes", "## Workflow",
+  ]],
+  ["docs/ai-workflow/review-template.md", [
+    "Findings:", "Open Questions / Assumptions:", "Verdict:", "Reason:",
+    "Required Fixes:", "Workflow State:", "Exact Next Step:",
+  ]],
+  ["docs/ai-workflow/done-update-template.md", [
+    "Card:", "Status: Done", "Completed:", "Changed Files:", "Validation:", "Pipeline Trail:",
+    "Scope Delivered:", "Scope Not Delivered:", "Follow-up Tasks:", "Exact Next Step:",
+  ]],
 ]);
 
 const ISSUE_TEMPLATE_AUTHORITY_FILES = Object.freeze([
@@ -83,9 +121,16 @@ function finding(file, ruleId, message) {
 }
 
 function localMarkdownTargets(content) {
-  return [...content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)]
-    .map((match) => match[1].trim().split("#", 1)[0])
+  const inlineTargets = [...content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)]
+    .map((match) => match[1].trim().split("#", 1)[0]);
+  const referenceTargets = [...content.matchAll(/^\s*\[[^\]]+\]:\s*<?([^>\s]+)>?/gm)]
+    .map((match) => match[1].trim().split("#", 1)[0]);
+  return [...inlineTargets, ...referenceTargets]
     .filter((target) => target && !/^(?:https?:|mailto:)/i.test(target));
+}
+
+function hasExactTrimmedLine(content, field) {
+  return content.split(/\r?\n/).some((line) => line.trim() === field);
 }
 
 function escapesRoot(root, resolved) {
@@ -129,7 +174,7 @@ export function validateWorkflowPack(rootDir) {
     if (content === undefined) continue;
     for (const field of fields) {
       checksRun += 1;
-      if (!content.includes(field)) {
+      if (!hasExactTrimmedLine(content, field)) {
         findings.push(finding(relativePath, "template.field", `Missing required template field: ${field}`));
       }
     }
