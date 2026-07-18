@@ -1,11 +1,17 @@
 # AI Workflow Mission Control Design
 
-**Version:** 0.1.0  
-**Status:** Proposed  
-**Date:** 2026-07-18  
-**Owner:** Technical Director  
-**Card:** [Issue #140](https://github.com/Mhaizza/ai-space-colony-sim/issues/140)  
-**Upstream:** [abhi1693/openclaw-mission-control](https://github.com/abhi1693/openclaw-mission-control)  
+**Version:** 0.1.0
+
+**Status:** Proposed
+
+**Date:** 2026-07-18
+
+**Owner:** Technical Director
+
+**Card:** [Issue #140](https://github.com/Mhaizza/ai-space-colony-sim/issues/140)
+
+**Upstream:** [abhi1693/openclaw-mission-control](https://github.com/abhi1693/openclaw-mission-control)
+
 **Authority:** AI Studio feature workflow, architecture workflow, Kanban Update protocol, and this Human-approved design direction
 
 ## 1. Context
