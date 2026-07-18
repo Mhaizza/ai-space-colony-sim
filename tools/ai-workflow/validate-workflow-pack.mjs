@@ -3,6 +3,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const REQUIRED_FILES = Object.freeze([
+  "ai-studio/AI_STUDIO_BOOT.md",
+  "ai-studio/SYSTEM_MAP.md",
   "AGENTS.md",
   "CLAUDE.md",
   "CONTRIBUTING.md",
@@ -31,12 +33,22 @@ const TOKEN_RULES = Object.freeze([
   ["docs/ai-workflow/operating-model.md", "policy.role", [
     "### Planner", "### Implementer", "### Reviewer", "### Workflow Operator", "### Human Owner",
   ]],
+  ["docs/ai-workflow/operating-model.md", "policy.authority-hierarchy", [
+    "## Authority Hierarchy",
+    "ai-studio/AI_STUDIO_BOOT.md",
+    "supplements",
+    "Boot Step 8",
+  ]],
   ["docs/ai-workflow/prompt-pack.md", "prompt.role", [
     "## 1. Planner", "## 2. Implementer", "## 3. Reviewer", "## 4. Workflow Operator",
   ]],
+  ["AGENTS.md", "entrypoint.boot", ["ai-studio/AI_STUDIO_BOOT.md"]],
+  ["CLAUDE.md", "entrypoint.boot", ["ai-studio/AI_STUDIO_BOOT.md"]],
+  ["CONTRIBUTING.md", "entrypoint.boot", ["ai-studio/AI_STUDIO_BOOT.md"]],
   ["AGENTS.md", "entrypoint.reference", ["docs/ai-workflow/", "Role Routing"]],
   ["CLAUDE.md", "entrypoint.reference", ["docs/ai-workflow/", "Role Selection"]],
   ["CONTRIBUTING.md", "entrypoint.reference", ["docs/ai-workflow/", "AI Workers"]],
+  ["ai-studio/SYSTEM_MAP.md", "system-map.workflow-pack", ["docs/ai-workflow/"]],
 ]);
 
 const TEMPLATE_RULES = Object.freeze([
@@ -45,6 +57,22 @@ const TEMPLATE_RULES = Object.freeze([
   ["docs/ai-workflow/pr-summary-template.md", ["Summary", "Scope", "Authority", "Changes", "Not Changed", "Validation", "Risks / Notes", "Workflow"]],
   ["docs/ai-workflow/review-template.md", ["Findings:", "Open Questions / Assumptions:", "Verdict:", "Reason:", "Required Fixes:", "Workflow State:", "Exact Next Step:"]],
   ["docs/ai-workflow/done-update-template.md", ["Card:", "Status: Done", "Completed:", "Changed Files:", "Validation:", "Pipeline Trail:", "Scope Delivered:", "Scope Not Delivered:", "Follow-up Tasks:", "Exact Next Step:"]],
+]);
+
+const ISSUE_TEMPLATE_AUTHORITY_FILES = Object.freeze([
+  ".github/ISSUE_TEMPLATE/feature-card.md",
+  ".github/ISSUE_TEMPLATE/design-card.md",
+  ".github/ISSUE_TEMPLATE/adr-card.md",
+]);
+
+const PROTOTYPE_VALIDATION_COMMANDS = Object.freeze([
+  "npm --prefix prototype test",
+  "npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json",
+]);
+
+const PR_TEMPLATE_FILES = Object.freeze([
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  "docs/ai-workflow/pr-summary-template.md",
 ]);
 
 const CONTACT_LINK_URL =
@@ -103,6 +131,34 @@ export function validateWorkflowPack(rootDir) {
       checksRun += 1;
       if (!content.includes(field)) {
         findings.push(finding(relativePath, "template.field", `Missing required template field: ${field}`));
+      }
+    }
+  }
+
+  for (const relativePath of ISSUE_TEMPLATE_AUTHORITY_FILES) {
+    const content = contents.get(relativePath);
+    if (content === undefined) continue;
+    checksRun += 1;
+    if (!content.includes("## Authority")) {
+      findings.push(finding(
+        relativePath,
+        "issue-template.authority",
+        "Missing required contract: ## Authority",
+      ));
+    }
+  }
+
+  for (const relativePath of PR_TEMPLATE_FILES) {
+    const content = contents.get(relativePath);
+    if (content === undefined) continue;
+    for (const command of PROTOTYPE_VALIDATION_COMMANDS) {
+      checksRun += 1;
+      if (!content.includes(command)) {
+        findings.push(finding(
+          relativePath,
+          "pr-template.validation-command",
+          `Missing required contract: ${command}`,
+        ));
       }
     }
   }

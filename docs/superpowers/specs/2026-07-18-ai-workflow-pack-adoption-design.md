@@ -10,12 +10,16 @@ Make one permanent repository workflow immediately discoverable and mechanically
 
 ## Canonical Sources
 
-- `docs/ai-workflow/operating-model.md` is the authority for roles, gates, state transitions, and handoffs.
+- Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file remains the unchanged first-read cold-start authority.
+- The workflow pack supplements rather than replaces constitution, governance, ai-studio workflows, roles, and accepted ADRs.
+- Use the workflow pack during Boot Step 8 before posting Start Task.
+- `docs/ai-workflow/operating-model.md` is the authority for workflow-pack roles, gates, state transitions, and handoffs.
 - `docs/ai-workflow/prompt-pack.md` contains reusable role prompts.
 - The lifecycle templates in `docs/ai-workflow/` define card, Start Task, PR, review, and Done records.
-- `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and GitHub templates are entrypoints. They point to the canonical sources instead of duplicating the full policy.
+- `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and GitHub templates are entrypoints. They point to the boot authority and the workflow pack instead of duplicating the full policy.
+- `ai-studio/SYSTEM_MAP.md` registers `docs/ai-workflow/` as a subordinate Tier 2 extension.
 
-If an entrypoint conflicts with the operating model, the operating model wins and the validator reports the drift.
+If an entrypoint conflicts with the operating model on workflow-pack policy, the operating model wins and the validator reports the drift. Boot authority remains `ai-studio/AI_STUDIO_BOOT.md`.
 
 ## Repository Shape
 
@@ -33,12 +37,15 @@ No root package manager or new runtime dependency is introduced. The validator r
 
 The validator accepts a repository root and returns a non-zero exit code with actionable messages when any required contract is broken. It checks:
 
-1. all required workflow, entrypoint, and GitHub-template files exist;
-2. the operating model contains the core laws and required role sections;
+1. all required workflow, entrypoint, GitHub-template, and boot-authority files exist, including `ai-studio/AI_STUDIO_BOOT.md` and `ai-studio/SYSTEM_MAP.md`;
+2. the operating model contains the core laws, required role sections, and the authority hierarchy;
 3. the prompt pack contains Planner, Implementer, Reviewer, and Workflow Operator prompts;
 4. lifecycle templates contain their required fields;
-5. root entrypoints reference `docs/ai-workflow/` and identify the relevant worker role;
-6. Markdown links used by the workflow pack resolve inside the repository.
+5. root entrypoints reference `ai-studio/AI_STUDIO_BOOT.md` and `docs/ai-workflow/`, and identify the relevant worker role;
+6. `ai-studio/SYSTEM_MAP.md` registers `docs/ai-workflow/`;
+7. feature, design, and ADR issue templates contain `## Authority`;
+8. both PR templates contain the prototype-aware validation commands;
+9. Markdown links used by the workflow pack resolve inside the repository.
 
 The validator must not modify files, GitHub state, or Kanban state. Output is deterministic: findings are sorted by file and rule id.
 

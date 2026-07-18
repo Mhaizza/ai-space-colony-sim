@@ -1,8 +1,24 @@
 # AI Agent Instructions
 
-This repository has a standard workflow pack that all AI agents must use by default.
+## Boot Authority
 
-Before doing any work, read these files in order:
+Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file is the unchanged first-read cold-start authority for every session.
+
+The workflow pack in `docs/ai-workflow/` supplements rather than replaces:
+
+- constitution
+- governance
+- ai-studio workflows
+- roles
+- accepted ADRs
+
+Use the workflow pack during Boot Step 8 (current Kanban card) before posting Start Task.
+
+## Workflow Pack
+
+After boot, use the repository workflow pack by default.
+
+Read these files in order:
 
 1. `docs/ai-workflow/README.md`
 2. `docs/ai-workflow/operating-model.md`
@@ -51,9 +67,10 @@ If implementation discovers a contradiction or needs to widen scope:
 
 ## Repository Entry Points
 
+- Boot authority: `ai-studio/AI_STUDIO_BOOT.md`
 - Workflow entrypoint: `docs/ai-workflow/README.md`
 - Full policy: `docs/ai-workflow/operating-model.md`
 - Prompts: `docs/ai-workflow/prompt-pack.md`
 - Templates: `docs/ai-workflow/`
 
-This file is the root instruction entrypoint for agents working in this repository.
+This file routes agents into the workflow pack after the AI Studio boot sequence.

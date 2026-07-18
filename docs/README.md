@@ -7,6 +7,10 @@ Reference material, onboarding guides, the project roadmap, and process document
 
 ## Start Here
 
+Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file is the unchanged first-read cold-start authority.
+
+The workflow pack under `docs/ai-workflow/` supplements rather than replaces constitution, governance, ai-studio workflows, roles, and accepted ADRs. Use it during Boot Step 8 before posting Start Task.
+
 For the standard AI agent workflow used in this repository, start with:
 
 - [`ai-workflow/README.md`](./ai-workflow/README.md) - practical entrypoint

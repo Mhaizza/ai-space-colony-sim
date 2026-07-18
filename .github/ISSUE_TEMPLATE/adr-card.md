@@ -28,11 +28,15 @@ assignees: []
 
 ## Dependencies
 
+-
+
+## Authority
+
 - Parent issue:
 - Approved design:
 - Related ADRs:
 - Prior PRs:
-- Workflow docs:
+- Governing workflow docs:
   - `docs/ai-workflow/operating-model.md`
   - `docs/ai-workflow/task-template.md`
 

@@ -11,23 +11,25 @@ import { REQUIRED_FILES, validateWorkflowPack } from "./validate-workflow-pack.m
 const SCRIPT_PATH = fileURLToPath(new URL("./validate-workflow-pack.mjs", import.meta.url));
 
 const VALID_CONTENT = {
-  "AGENTS.md": "# Agents\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Routing\nPlanner Implementer Reviewer Workflow Operator\n",
-  "CLAUDE.md": "# Claude\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Selection\nImplementer\n",
-  "CONTRIBUTING.md": "# Contributing\n\nSee [workflow](./docs/ai-workflow/README.md).\n\n## AI Workers\n",
+  "ai-studio/AI_STUDIO_BOOT.md": "# AI Studio Boot Sequence\n\nRead this file first.\n",
+  "ai-studio/SYSTEM_MAP.md": "# System Map\n\nRegisters `docs/ai-workflow/` as a Tier 2 subordinate extension.\n",
+  "AGENTS.md": "# Agents\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Routing\nPlanner Implementer Reviewer Workflow Operator\n",
+  "CLAUDE.md": "# Claude\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Selection\nImplementer\n",
+  "CONTRIBUTING.md": "# Contributing\n\nRead `ai-studio/AI_STUDIO_BOOT.md` first.\n\nSee [workflow](./docs/ai-workflow/README.md).\n\n## AI Workers\n",
   "docs/README.md": "# Docs\n\nSee [workflow](./ai-workflow/README.md).\n",
   "docs/ai-workflow/README.md": "# AI Workflow Pack\n\n[Model](./operating-model.md) [Prompts](./prompt-pack.md) [Task](./task-template.md) [Start](./start-task-template.md) [PR](./pr-summary-template.md) [Review](./review-template.md) [Done](./done-update-template.md)\n",
-  "docs/ai-workflow/operating-model.md": "# AI Agent Operating Model\n\n## Core Laws\n### Law 1 - No Card, No Work\n### Law 2 - One Card, One Owner\n### Law 3 - Authority First\n### Law 4 - No Silent Scope Expansion\n### Law 5 - Review Before Merge\n### Law 6 - Findings First\n### Law 7 - Exact Next Step\n## Roles\n### Planner\n### Implementer\n### Reviewer\n### Workflow Operator\n### Human Owner\n",
+  "docs/ai-workflow/operating-model.md": "# AI Agent Operating Model\n\n## Authority Hierarchy\n1. Agents read `ai-studio/AI_STUDIO_BOOT.md` first.\n2. This workflow pack supplements those sources.\n3. During Boot Step 8, use this pack.\n\n## Core Laws\n### Law 1 - No Card, No Work\n### Law 2 - One Card, One Owner\n### Law 3 - Authority First\n### Law 4 - No Silent Scope Expansion\n### Law 5 - Review Before Merge\n### Law 6 - Findings First\n### Law 7 - Exact Next Step\n## Roles\n### Planner\n### Implementer\n### Reviewer\n### Workflow Operator\n### Human Owner\n",
   "docs/ai-workflow/prompt-pack.md": "# Prompt Pack\n\n## 1. Planner\n## 2. Implementer\n## 3. Reviewer\n## 4. Workflow Operator\n",
   "docs/ai-workflow/task-template.md": "# Task Template\nTitle:\nGoal:\nIn Scope:\nOut of Scope:\nDependencies:\nAuthority:\nRisks:\nAcceptance Criteria:\nRequired Validation:\nWorkflow Gates:\nExact Next Step:\n",
   "docs/ai-workflow/start-task-template.md": "# Start Task Template\nTask:\nGoal:\nAcceptance Criteria:\nFiles Expected To Change:\nDependencies:\nAuthority:\nRisks:\nEstimated Deliverables:\nExact Stop Condition:\n",
-  "docs/ai-workflow/pr-summary-template.md": "# PR Summary Template\nSummary\nScope\nAuthority\nChanges\nNot Changed\nValidation\nRisks / Notes\nWorkflow\n",
+  "docs/ai-workflow/pr-summary-template.md": "# PR Summary Template\nSummary\nScope\nAuthority\nChanges\nNot Changed\nValidation\n- `npm --prefix prototype test`:\n- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:\nRisks / Notes\nWorkflow\n",
   "docs/ai-workflow/review-template.md": "# Review Template\nFindings:\nOpen Questions / Assumptions:\nVerdict:\nReason:\nRequired Fixes:\nWorkflow State:\nExact Next Step:\n",
   "docs/ai-workflow/done-update-template.md": "# Done Update Template\nCard:\nStatus: Done\nCompleted:\nChanged Files:\nValidation:\nPipeline Trail:\nScope Delivered:\nScope Not Delivered:\nFollow-up Tasks:\nExact Next Step:\n",
   ".github/ISSUE_TEMPLATE/feature-card.md": "---\nname: Feature Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
   ".github/ISSUE_TEMPLATE/design-card.md": "---\nname: Design Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
-  ".github/ISSUE_TEMPLATE/adr-card.md": "---\nname: ADR Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
+  ".github/ISSUE_TEMPLATE/adr-card.md": "---\nname: ADR Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
   ".github/ISSUE_TEMPLATE/config.yml": "blank_issues_enabled: true\ncontact_links:\n  - name: AI Workflow Pack\n    url: https://github.com/Mhaizza/ai-space-colony-sim/blob/main/docs/ai-workflow/README.md\n    about: Workflow entrypoint.\n",
-  ".github/PULL_REQUEST_TEMPLATE.md": "## Summary\n## Scope\n## Authority\n## Changes\n## Not Changed\n## Validation\n## Risks / Notes\n## Workflow\n",
+  ".github/PULL_REQUEST_TEMPLATE.md": "## Summary\n## Scope\n## Authority\n## Changes\n## Not Changed\n## Validation\n- `npm --prefix prototype test`:\n- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:\n## Risks / Notes\n## Workflow\n",
 };
 
 function createFixture({ omit = [], overrides = {} } = {}) {
@@ -63,6 +65,94 @@ test("reports a missing required file", () => {
       ruleId: "file.required",
       message: "Required workflow file is missing",
     }]);
+  });
+});
+
+test("requires AI Studio boot authority file", () => {
+  withFixture({ omit: ["ai-studio/AI_STUDIO_BOOT.md"] }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "ai-studio/AI_STUDIO_BOOT.md" &&
+      finding.ruleId === "file.required"
+    ));
+  });
+});
+
+test("requires agent entrypoints to reference AI Studio boot", () => {
+  withFixture({
+    overrides: {
+      "AGENTS.md": "# Agents\n\nRead `docs/ai-workflow/README.md`.\n\n## Role Routing\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "AGENTS.md" &&
+      finding.ruleId === "entrypoint.boot" &&
+      finding.message.includes("ai-studio/AI_STUDIO_BOOT.md")
+    ));
+  });
+});
+
+test("requires SYSTEM_MAP to register docs/ai-workflow/", () => {
+  withFixture({
+    overrides: {
+      "ai-studio/SYSTEM_MAP.md": "# System Map\n\nNo workflow pack registration.\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "ai-studio/SYSTEM_MAP.md" &&
+      finding.ruleId === "system-map.workflow-pack" &&
+      finding.message.includes("docs/ai-workflow/")
+    ));
+  });
+});
+
+test("requires operating model authority hierarchy", () => {
+  withFixture({
+    overrides: {
+      "docs/ai-workflow/operating-model.md":
+        "# AI Agent Operating Model\n\n## Core Laws\n### Law 1 - No Card, No Work\n### Law 2 - One Card, One Owner\n### Law 3 - Authority First\n### Law 4 - No Silent Scope Expansion\n### Law 5 - Review Before Merge\n### Law 6 - Findings First\n### Law 7 - Exact Next Step\n## Roles\n### Planner\n### Implementer\n### Reviewer\n### Workflow Operator\n### Human Owner\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "docs/ai-workflow/operating-model.md" &&
+      finding.ruleId === "policy.authority-hierarchy" &&
+      finding.message.includes("## Authority Hierarchy")
+    ));
+  });
+});
+
+test("requires Authority in all issue templates", () => {
+  withFixture({
+    overrides: {
+      ".github/ISSUE_TEMPLATE/adr-card.md":
+        "---\nname: ADR Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === ".github/ISSUE_TEMPLATE/adr-card.md" &&
+      finding.ruleId === "issue-template.authority" &&
+      finding.message.includes("## Authority")
+    ));
+  });
+});
+
+test("requires prototype-aware validation commands in PR templates", () => {
+  withFixture({
+    overrides: {
+      ".github/PULL_REQUEST_TEMPLATE.md":
+        "## Summary\n## Scope\n## Authority\n## Changes\n## Not Changed\n## Validation\n- `npm test`:\n- `npx tsc --noEmit`:\n## Risks / Notes\n## Workflow\n",
+    },
+  }, (root) => {
+    const findings = validateWorkflowPack(root).findings;
+    assert.ok(findings.some((finding) =>
+      finding.file === ".github/PULL_REQUEST_TEMPLATE.md" &&
+      finding.ruleId === "pr-template.validation-command" &&
+      finding.message.includes("npm --prefix prototype test")
+    ));
+    assert.ok(findings.some((finding) =>
+      finding.file === ".github/PULL_REQUEST_TEMPLATE.md" &&
+      finding.ruleId === "pr-template.validation-command" &&
+      finding.message.includes("npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json")
+    ));
   });
 });
 

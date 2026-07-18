@@ -1,8 +1,24 @@
 # Claude Project Instructions
 
-Use the repository workflow pack by default.
+## Boot Authority
 
-Read first:
+Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file is the unchanged first-read cold-start authority for every session.
+
+The workflow pack in `docs/ai-workflow/` supplements rather than replaces:
+
+- constitution
+- governance
+- ai-studio workflows
+- roles
+- accepted ADRs
+
+Use the workflow pack during Boot Step 8 (current Kanban card) before posting Start Task.
+
+## Workflow Pack
+
+Use the repository workflow pack by default after boot.
+
+Read:
 
 1. `docs/ai-workflow/README.md`
 2. `docs/ai-workflow/operating-model.md`

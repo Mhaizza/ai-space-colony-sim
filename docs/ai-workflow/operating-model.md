@@ -4,6 +4,13 @@ This document defines the standard multi-agent workflow for `ai-space-colony-sim
 
 Use it as the default operating system for every new card unless a card explicitly says otherwise.
 
+## Authority Hierarchy
+
+1. Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file is the unchanged first-read cold-start authority.
+2. Constitution, governance, ai-studio workflows, roles, and accepted ADRs remain governing.
+3. This workflow pack supplements those sources; it does not replace them.
+4. During Boot Step 8, use this pack's templates before posting Start Task.
+
 ## Purpose
 
 This workflow exists to keep AI agents aligned on:

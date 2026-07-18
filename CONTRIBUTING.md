@@ -2,7 +2,21 @@
 
 This repository uses a standard AI workflow pack for both human contributors and AI workers.
 
-Before starting new work, read:
+## Boot Authority
+
+Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file is the unchanged first-read cold-start authority for every session.
+
+The workflow pack in `docs/ai-workflow/` supplements rather than replaces:
+
+- constitution
+- governance
+- ai-studio workflows
+- roles
+- accepted ADRs
+
+Use the workflow pack during Boot Step 8 (current Kanban card) before posting Start Task.
+
+Before starting new work, also read:
 
 - [`docs/ai-workflow/README.md`](./docs/ai-workflow/README.md)
 - [`docs/ai-workflow/operating-model.md`](./docs/ai-workflow/operating-model.md)

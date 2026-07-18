@@ -25,8 +25,8 @@ Part of #<issue>
 - ...
 
 ## Validation
-- `npm test`:
-- `npx tsc --noEmit`:
+- `npm --prefix prototype test`:
+- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:
 - replay / save-load / deterministic checks:
 
 ## Risks / Notes

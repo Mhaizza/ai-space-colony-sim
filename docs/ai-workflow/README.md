@@ -2,6 +2,20 @@
 
 This folder is the ready-to-use operating kit for AI agents in `ai-space-colony-sim`.
 
+## Boot Authority
+
+Agents read `ai-studio/AI_STUDIO_BOOT.md` first. That file is the unchanged first-read cold-start authority for every session.
+
+This pack supplements rather than replaces:
+
+- constitution
+- governance
+- ai-studio workflows
+- roles
+- accepted ADRs
+
+Use this pack during Boot Step 8 (current Kanban card) before posting Start Task.
+
 If you want to start work immediately without redesigning the process each time, use this order:
 
 1. Read [`operating-model.md`](./operating-model.md).
