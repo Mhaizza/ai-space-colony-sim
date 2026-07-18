@@ -85,6 +85,7 @@ ai-space-colony-sim/                        ← repository root
 │   └── narrative/
 │
 ├── docs/                                   ← project documentation (project-wide)
+│   └── ai-workflow/                        ← Tier 2 subordinate extension: AI agent workflow pack
 │
 ├── game/                                   ← game concept and narrative bible (project-wide)
 │
@@ -120,6 +121,7 @@ ai-space-colony-sim/                        ← repository root
 |-----------|---------|
 | `design/` | Game system specs, UI/UX, balance, narrative scripts |
 | `docs/` | Onboarding, roadmap, process guides, reference docs |
+| `docs/ai-workflow/` | Tier 2 subordinate extension: operating model, prompts, and lifecycle templates for AI agents. Supplements ai-studio; does not replace constitution, governance, workflows, roles, or accepted ADRs. Used at Boot Step 8 before Start Task. |
 | `game/` | Creative brief: concept, core loop, narrative bible |
 | `src/` | Simulation code, game logic, UI (not yet created) |
 
@@ -234,6 +236,7 @@ Full protocol: [`AI_STUDIO_BOOT.md`](AI_STUDIO_BOOT.md)
 | Releasing a phase | `workflows/release-workflow.md` |
 | Changing the constitution | `workflows/constitution-change-workflow.md` |
 | Any task (completion format) | `workflows/kanban-update-protocol.md` |
+| AI agent card / Start Task / PR / review / closeout | `docs/ai-workflow/` (Tier 2 subordinate; use at Boot Step 8) |
 
 ---
 
@@ -303,6 +306,7 @@ Use this table when you produce an artifact and need to decide where it goes:
 | Balance parameters | `design/balance/` |
 | Narrative scripts or event templates | `design/narrative/` |
 | Project documentation, onboarding, roadmap | `docs/` |
+| AI agent workflow pack artifacts (operating model, prompts, lifecycle templates) | `docs/ai-workflow/` |
 | Architectural decision | `adr/` |
 | Review record (architecture or game design) | `ai-studio/reviews/` |
 | Session meeting record | `ai-studio/meetings/` |
