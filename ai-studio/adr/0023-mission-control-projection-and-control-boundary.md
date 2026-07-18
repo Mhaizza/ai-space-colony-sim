@@ -1,6 +1,6 @@
 # ADR-23 - Mission Control Projection and Control Boundary
 
-**Status:** Proposed (revision 1 after architecture review: trust classes, canonical projection identity, audit ownership, workflow-record precedence, and polling/failure semantics closed)
+**Status:** Proposed (revision 2 after architecture review: trust classes, canonical projection identity, audit ownership, complete workflow-record contract, polling/failure semantics, database outage, and runtime-mount boundaries closed)
 **Date:** 2026-07-19
 **Phase:** Tooling architecture gate
 **Deciders:** Project owner, Technical Director
@@ -78,6 +78,8 @@ Unknown enum members, malformed records, and unsupported external schema shapes 
 
 Staleness is explicit source metadata. GitHub failure leaves the last successful projection visible as stale and read-only. Failure of one local source does not make GitHub projection unavailable. The backend never falls back to browser-local workflow truth.
 
+If PostgreSQL or the projection store is unavailable, the backend returns an explicit service-unavailable response and the UI renders an unavailable state. It does not return an empty board, create an in-memory replacement authority, infer that no cards are active, or use browser-local cached data as current truth. Polling pauses or fails without committing projection changes and resumes through the normal reconciliation path after storage health is restored.
+
 ### D4 - `ai-workflow-record:v1` is the only machine authority for derived agents and gates
 
 Machine-readable workflow comments contain exactly one `ai-workflow-record:v1` HTML-comment payload with the closed fields and unions defined by design v0.4.0. The record types are:
@@ -85,6 +87,40 @@ Machine-readable workflow comments contain exactly one `ai-workflow-record:v1` H
 ```text
 start_task | handoff | review_result | human_approval | kanban_update | completion
 ```
+
+The payload is a JSON object with exactly these fields and no others:
+
+```text
+{
+  type: RecordType
+  card: positive integer
+  worker: WorkerId | null
+  role: RoleSlug | null
+  artifact: ArtifactRef | null
+  head: FullCommitSha | null
+  result: ReviewResult | null
+  supersedes: positive GitHub comment id | null
+}
+
+WorkerId = "codex" | "claude" | "cursor" | "openclaw" | "human" | "chatgpt-reviewer"
+ReviewResult = "approved" | "revisions_required"
+ArtifactRef = "pr:<positive integer>" | "issue:<positive integer>" | "path:<normalized repository-relative path>"
+FullCommitSha = exactly 40 lowercase hexadecimal characters
+RoleSlug = a slug present in the repository's governed role registry
+```
+
+The record must be posted on the Issue identified by `card`; records on another Issue or only on a Pull Request are non-authoritative Live Feed entries. `path:` rejects absolute paths, backslashes, empty segments, `.`/`..` segments, percent-encoded traversal, and paths outside the repository. The per-type validity matrix is exhaustive:
+
+| `type` | `worker` | `role` | `artifact` | `head` | `result` | `supersedes` |
+|---|---|---|---|---|---|---|
+| `start_task` | Worker identity being started | required governed role | `null` | `null` | `null` | `null` or prior same-card assignment record |
+| `handoff` | next Worker identity | next governed role | `null` | `null` | `null` | required effective assignment record |
+| `review_result` | `chatgpt-reviewer` | required reviewer role | required `pr:` reference | required exact reviewed head | required review result | `null` or prior same-card review result |
+| `human_approval` | `human` | required Human-owner role | required `pr:` reference | required exact approved head | `null` | `null` or prior same-card Human approval |
+| `kanban_update` | effective Worker identity or `human` | required corresponding role | `null` | `null` | `null` | `null` or prior same-card Kanban Update |
+| `completion` | effective Worker identity or `human` | required corresponding role | required `pr:`, `issue:`, or `path:` reference | required exact head for `pr:`, otherwise `null` | `null` | `null` or prior same-card completion |
+
+Every row is exact. A field value or nullability that does not match its row is malformed and quarantined. Adding a field, enum member, artifact form, record type, or legal row shape requires an ADR revision.
 
 The authenticated GitHub author, comment ID, `createdAt`, and `updatedAt` are source facts. The payload cannot claim its own actor. A server-only principal registry maps GitHub logins into exactly one of three disjoint trust classes:
 
@@ -141,7 +177,7 @@ The exporter never emits OpenClaw credentials, configuration, identity, message/
 
 Mission Control runs through Docker Compose under Docker Desktop's WSL2 Linux backend. Frontend and backend processes listen on their container interfaces. Compose publishes only the frontend and backend ports to Windows host loopback (`127.0.0.1`); wildcard host publishing is invalid. PostgreSQL and Redis remain internal with no default host ports.
 
-Local authentication is mandatory when Clerk is absent and uses a random token of at least 50 characters. Repository mounts are read-only and minimal. Persistent volumes contain rebuildable projection data, not workflow authority. A remote or internet-facing deployment is not pre-authorized by this ADR.
+Local authentication is mandatory when Clerk is absent and uses a random token of at least 50 characters. No host repository, game worktree, Mission Control source tree, or OpenClaw runtime directory is mounted into a running container; application source is copied into immutable images at build time. The sole host-data runtime mount is D6's redacted export directory, mounted read-only. Persistent volumes contain rebuildable projection data or non-authoritative audit history, never workflow authority. A remote or internet-facing deployment is not pre-authorized by this ADR.
 
 ### D8 - The read-only boundary is architectural; future controls require ADR revision
 
@@ -162,11 +198,11 @@ Read-only acceptance cannot be interpreted as deferred permission to add control
 1. GitHub remains the sole source of card, scope, review, approval, and completion truth.
 2. Mission Control projection/cache is rebuildable; local audit history is non-authoritative, separately retained, and may be lost. Neither is an independent work queue.
 3. Projection identity uses the closed D3 `sourceType` union and canonical immutable `sourceId`; only a complete successful partition read can tombstone absent records in that partition.
-4. Partial failure never infers deletion, completion, reassignment, approval, or status change.
-5. Derived agent and gate state comes only from valid `ai-workflow-record:v1` records and exact GitHub source facts; prose is never parsed as authority; effective records use latest-valid-unsuperseded precedence.
+4. Partial failure or projection-store outage never infers empty state, deletion, completion, reassignment, approval, or status change.
+5. Derived agent and gate state comes only from records matching the exhaustive `ai-workflow-record:v1` schema/matrix and exact GitHub source facts; prose is never parsed as authority; effective records use latest-valid-unsuperseded precedence.
 6. Worker, reviewer, and Human principals are disjoint trust classes. Review and Human approval are exact-head facts and never survive a head change.
 7. The GitHub token has exactly `read:project`; broader, missing, or write-capable scope fails closed.
-8. Containers receive only the redacted host-export directory; runtime and repository roots are not mounted.
+8. Containers receive only the redacted host-export directory at runtime; no host repository, source tree, worktree, or OpenClaw root is mounted.
 9. Host observations are versioned, atomic, expiry-bounded, restart-safe, and replay-resistant.
 10. Network publication is host-loopback only; PostgreSQL and Redis have no default host exposure.
 11. The MVP has no control/write channel. Adding one requires an accepted ADR-23 revision.
@@ -230,12 +266,12 @@ One control plane, a rebuildable projection, explicit source health, and reversi
 
 - Verify the fork tree equals upstream commit `75eb8b0894803e48891a8a92b564c25fb126f2ea`, preserves MIT attribution, and records both remotes.
 - Contract tests for all Project/Issue/Pull Request/comment/review/Actions/status/check source fixtures and unknown-shape quarantine.
-- Idempotency, partition-completeness tombstone, cross-partition isolation, partial-failure non-deletion, polling/manual-refresh equivalence, no-webhook surface, rate-limit metadata/backoff/jitter/degraded-health, stale, and projection-rebuild tests.
+- Idempotency, partition-completeness tombstone, cross-partition isolation, partial-failure non-deletion, polling/manual-refresh equivalence, no-webhook surface, rate-limit metadata/backoff/jitter/degraded-health, stale, projection-store outage/unavailable-state, and projection-rebuild tests.
 - Projection-key tests covering every closed source type, canonical GitHub node ID, stable local manifest UUID, mutable display attributes, and remove-plus-add identity changes.
-- Exhaustive `ai-workflow-record:v1` parser tests covering disjoint trust classes, login-class overlap and missing-custody-attestation rejection, worker impersonation of reviewer/Human, handoff target worker/role, Kanban/completion authors, exact-head gates, edits, latest-valid-unsuperseded precedence, supersession, cycles, assignment conflicts, and malformed records.
+- Exhaustive `ai-workflow-record:v1` parser tests covering every matrix row and nullability violation, unknown/extra fields and enums, artifact/path validation, Issue/card binding, disjoint trust classes, login-class overlap and missing-custody-attestation rejection, worker impersonation of reviewer/Human, handoff target worker/role, Kanban/completion authors, exact-head gates, edits, latest-valid-unsuperseded precedence, supersession, cycles, assignment conflicts, and malformed records.
 - Credential tests requiring exactly `read:project`, rejecting broader/missing scopes, and probing every required public read endpoint.
 - Exporter tests for redaction, fixed paths, ACL/setup failure, atomic replacement, schema version, session restart, sequence, expiry, replay, and stale retention.
-- Compose tests proving host-loopback-only publication, internal-only PostgreSQL/Redis, minimal read-only mounts, local auth, and absent/hard-disabled write routes.
+- Compose tests proving host-loopback-only publication, internal-only PostgreSQL/Redis, no runtime host mounts except the read-only export directory, local auth, and absent/hard-disabled write routes.
 - A destructive-cache test proving projection deletion followed by sync reconstructs current workflow state from authoritative sources while clearly reporting that destroyed local audit history was not reconstructed.
 
 ## Revisit Triggers
@@ -246,6 +282,7 @@ Revise this ADR before any of the following:
 - Project authority moves away from GitHub Project #4 or becomes organization-owned.
 - Credentials require a scope beyond exactly `read:project`.
 - Polling/manual-refresh initiation changes or webhooks/remote deployment introduce an inbound trust boundary.
+- Projection-store outage returns anything other than an explicit unavailable state.
 - Containers receive direct repository, worktree, or OpenClaw runtime mounts.
 - `ai-workflow-record:v1` changes fields, types, authority, ordering, supersession, or exact-head semantics.
 - Principal trust classes overlap, credential custody changes, or an agent gains a Human/reviewer credential.
@@ -262,10 +299,11 @@ Revise this ADR before any of the following:
 | Projection rebuildable; audit non-authoritative and not reconstructable | Distinguishes current derived state from local historical evidence | Claiming reconstructed audit history after cache loss |
 | Closed source types, canonical IDs, partition-scoped validate-never-infer reconciliation | Makes sync idempotent, rebuild-stable, and partial failure safe | Display/path identity; heuristic repair; deletion on failed/partial reads |
 | Polling/manual refresh only; bounded rate-limit backoff | Keeps the local MVP outbound-only and failure-safe | Inbound webhooks; busy retry; inferred completeness on failure |
-| Closed `ai-workflow-record:v1`, latest-valid-unsuperseded precedence, and disjoint Worker/Reviewer/Human trust classes | Deterministic, source-linked assignment and non-forgeable gates | Parsing prose; incomplete precedence; inferring actor from payload; shared cross-class credential |
+| Exhaustive `ai-workflow-record:v1` schema/matrix, latest-valid-unsuperseded precedence, and disjoint Worker/Reviewer/Human trust classes | Deterministic, source-linked assignment and non-forgeable gates | Delegated payload shape; parsing prose; incomplete precedence; inferring actor from payload; shared cross-class credential |
 | Dedicated classic PAT with exactly `read:project` | Reads user Project #4 without broad operator credentials | Operator `gh` token; write-scoped token |
 | Atomic redacted host export and read-only mount | Observes local health without exposing roots or shell access | Direct mounts; loopback command API; arbitrary probes |
 | Compose host-loopback publication | Local usability without LAN/database exposure | Wildcard host ports; container-loopback binding |
+| Explicit unavailable state on projection-store outage | Prevents an outage from appearing as an empty workflow | Empty board; browser-local authority; in-memory replacement store |
 | No write/control routes | Proves observability before consequential authority | Deferred hidden controls; write-through MVP |
 
 ---
@@ -273,9 +311,9 @@ Revise this ADR before any of the following:
 ## Kanban Update
 
 **Card:** ADR-23 - Mission Control Projection and Control Boundary (#142)
-**Status:** Review - ADR status Proposed; revision 1 closes the seven architecture-review findings; awaiting architecture re-review and Human acceptance.
-**Completed:** Drafted ADR-23 from the accepted Mission Control design v0.4.0 and revised D2-D4 after architecture review: projection and audit loss semantics are separated; every source has a canonical ID and completeness partition; polling/manual-refresh and rate-limit behavior are structural; Worker/Reviewer/Human principals and credentials are disjoint; handoff/update/completion author rules and latest-valid-unsuperseded precedence are explicit. Repository/upstream, credential scope, Windows host export, local deployment, and future-control boundaries remain unchanged.
+**Status:** Review - ADR status Proposed; revision 2 closes the seven architecture-review findings plus three valid inline follow-ups; awaiting architecture re-review and Human acceptance.
+**Completed:** Drafted ADR-23 from the accepted Mission Control design v0.4.0 and revised D2-D4/D7 after architecture review: projection and audit loss semantics are separated; every source has a canonical ID and completeness partition; polling/manual-refresh and rate-limit behavior are structural; Worker/Reviewer/Human principals and credentials are disjoint; the full workflow-record field/nullability matrix, handoff/update/completion author rules, and latest-valid-unsuperseded precedence are explicit; projection-store outage is unavailable rather than empty; runtime host mounts are limited to the redacted export directory. Repository/upstream, credential scope, Windows host export, local deployment, and future-control boundaries remain otherwise unchanged.
 **Changed Files:**
   CREATED  ai-studio/adr/0023-mission-control-projection-and-control-boundary.md
-**Validation:** Traced every decision to design v0.4.0, Issue #142, the Architecture Workflow, or an explicit architecture-review correction; confirmed no gameplay ADR is reopened; confirmed the existing OpenClaw runtime and all implementation files remain untouched. Added required tests for trust-class impersonation/overlap, source identity/partitions, polling/rate-limit behavior, effective-record precedence, and audit-loss reporting.
+**Validation:** Traced every decision to design v0.4.0, Issue #142, the Architecture Workflow, or an explicit architecture-review correction; confirmed no gameplay ADR is reopened; confirmed the existing OpenClaw runtime and all implementation files remain untouched. Added required tests for trust-class impersonation/overlap, source identity/partitions, polling/rate-limit behavior, full record-matrix/precedence, audit-loss reporting, database outage, and runtime mount isolation.
 **Follow-up Tasks:** Architecture re-review, then Human acceptance. Only after acceptance may the five implementation cards be opened in dependency order.
