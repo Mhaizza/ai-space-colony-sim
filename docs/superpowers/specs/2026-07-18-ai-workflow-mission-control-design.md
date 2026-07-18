@@ -1,6 +1,6 @@
 # AI Workflow Mission Control Design
 
-**Version:** 0.1.0
+**Version:** 0.2.0
 
 **Status:** Proposed
 
@@ -11,6 +11,8 @@
 **Card:** [Issue #140](https://github.com/Mhaizza/ai-space-colony-sim/issues/140)
 
 **Upstream:** [abhi1693/openclaw-mission-control](https://github.com/abhi1693/openclaw-mission-control)
+
+**Pinned upstream commit:** `75eb8b0894803e48891a8a92b564c25fb126f2ea` (`master`)
 
 **Authority:** AI Studio feature workflow, architecture workflow, Kanban Update protocol, and this Human-approved design direction
 
@@ -49,7 +51,7 @@ Mission Control lives in a sibling repository at:
 
 `C:\Users\Mhaiz\Projects\ai-space-colony-mission-control`
 
-It is not embedded in the game repository and is not placed inside `C:\Users\Mhaiz\.openclaw`. The repository preserves OpenClaw Mission Control's MIT license and attribution, uses `origin` for the project's fork, and uses `upstream` for `abhi1693/openclaw-mission-control`. The adopted upstream commit is recorded in `UPSTREAM.md` and is never advanced automatically.
+It is not embedded in the game repository and is not placed inside `C:\Users\Mhaiz\.openclaw`. The repository preserves OpenClaw Mission Control's MIT license and attribution, uses `origin` for the project's fork, and uses `upstream` for `abhi1693/openclaw-mission-control`. The immutable adoption point is upstream `master` commit `75eb8b0894803e48891a8a92b564c25fb126f2ea`. Bootstrap must reproduce that exact tree and record the SHA in `UPSTREAM.md`; it must not resolve `master` again. The pin is never advanced automatically.
 
 This separation prevents dashboard dependencies, database migrations, and deployment tooling from entering the simulation repository.
 
@@ -69,9 +71,11 @@ The fork gains a server-side GitHub projection adapter behind the existing backe
 4. An idempotent projector upserts records into the Mission Control database.
 5. Read APIs return projection data and source-health metadata to the frontend.
 
-The initial GitHub credential source is the authenticated local `gh` installation or a server-only fine-grained token. Credentials never enter browser bundles, API responses, logs, or persisted projection rows.
+The MVP must not reuse the operator's authenticated `gh` session. It uses a dedicated server-only fine-grained personal access token created solely for Mission Control. Its access is limited to the `Mhaizza/ai-space-colony-sim` repository and the owning user's Project #4, with only these read permissions: account Projects, repository Metadata, Issues, Pull requests, Actions, and Commit statuses. All write permissions and access to other repositories are excluded. Startup performs read-only capability probes for Project #4 and the repository and fails closed if either resource is inaccessible. Credential provisioning records the reviewed permission set outside the repository; rotating the token does not change projection identity. Credentials never enter browser bundles, API responses, logs, or persisted projection rows.
 
-Local machine state is supplied by a separate read-only local-observation adapter. It reads an allowlisted manifest and bounded probes for registered worktrees, automation state, and the existing OpenClaw runtime. For OpenClaw, the allowlist exposes only derived health/status fields from approved non-secret files and process/endpoint health; it excludes `credentials`, identity material, messages, media, raw logs, `openclaw.json`, approval tokens, and arbitrary workspace content. The web application must not expose a generic shell, arbitrary path reader, command parameter, or process launcher.
+Local machine state is supplied by a host-side read-only exporter plus a container-side ingestion adapter. The exporter runs as the current Windows user, reads an allowlisted manifest and bounded probes for registered worktrees, automation state, and the existing OpenClaw runtime, then writes one versioned JSON snapshot to `C:\Users\Mhaiz\AppData\Local\ai-space-colony-mission-control\export\host-status.json`. It writes a temporary file in the same directory, flushes it, and atomically replaces the destination. The directory ACL permits only the current user and `SYSTEM` to write. Docker Compose mounts only the export directory into the backend container at `/run/mission-control-host:ro`; no runtime or repository root is mounted.
+
+The snapshot contains `schemaVersion`, `sequence`, `generatedAt`, `expiresAt`, and closed arrays of derived health records. The backend accepts only schema version 1, requires a strictly increasing sequence for freshness, rejects snapshots whose `expiresAt` is in the past, and retains the last valid snapshot as stale without inferring deletion. The exporter runs every 15 seconds and sets `expiresAt` to 45 seconds after generation. For OpenClaw, it exposes only derived health/status fields from approved non-secret files and process/endpoint health; it excludes `credentials`, identity material, messages, media, raw logs, `openclaw.json`, approval tokens, and arbitrary workspace content. The web application must not expose a generic shell, arbitrary path reader, command parameter, or process launcher.
 
 ### D4. Projection Mapping
 
@@ -87,9 +91,25 @@ GitHub Project status values map directly to board columns:
 | Blocked | Blocked |
 | Done | Done |
 
-An active implementation card is derived from Project #4 and workflow records. The UI highlights an error if more than one card is simultaneously marked active by the governed workflow; it does not choose a winner or repair GitHub.
+Multiple cards may be active concurrently. The UI groups them by authoritative Project status and worker assignment without treating concurrency as an error. The invariant is per card: at most one primary implementer record may be effective for a card at a time. Conflicting effective assignment records quarantine that card's derived assignment while preserving its GitHub status; Mission Control never chooses a winner or repairs GitHub.
 
-Agent state is derived from structured Start Task, handoff, Kanban Update, and completion records, augmented by allowlisted local worktree and OpenClaw health observations. OpenClaw runtime presence never proves that an agent owns a card; assignment still requires the governed GitHub record. Approval state is derived from explicit structured Human approval and review records on Issues or Pull Requests. Pull Request state and CI status come directly from GitHub. Worktree and automation health are observational signals and never override card or approval state.
+Agent state and Human approval state are derived only from the closed workflow-record contract below, augmented by allowlisted local worktree and OpenClaw health observations. OpenClaw runtime presence never proves that an agent owns a card. Pull Request state and CI status come directly from GitHub. Worktree and automation health are observational signals and never override card or approval state.
+
+Every machine-readable workflow comment contains exactly one HTML comment with this shape; surrounding prose is display-only:
+
+```text
+<!-- ai-workflow-record:v1
+{"type":"start_task","card":140,"worker":"codex","role":"technical-director","artifact":null,"head":null,"supersedes":null}
+-->
+```
+
+The closed `type` union is `start_task | handoff | human_approval | kanban_update | completion`. `card` is the GitHub Issue number. `worker` is one of `codex | claude | cursor | openclaw | human` when the type requires a worker, otherwise `null`. `role` is a repository role slug when the type requires one, otherwise `null`. `artifact` is a repository-relative path, Issue number, or Pull Request number when applicable. `head` is a full 40-character commit SHA for artifact approval and otherwise `null`. `supersedes` is a GitHub comment ID or `null`. Unknown fields, missing fields, wrong nullability, unknown enum members, abbreviated SHAs, and multiple records in one comment are malformed.
+
+The authenticated GitHub comment author and immutable comment ID/timestamps are authoritative; an actor value is never accepted from payload data. Valid `start_task` records must be authored by the configured Human approver or repository owner. A `handoff` must be authored by the currently effective worker, identify the next worker/role in `worker`/`role`, and explicitly supersede the effective assignment record. A `human_approval` must be authored by a configured Human approver, reference the Pull Request in `artifact`, include its exact current `head`, and may not approve a changed head. `kanban_update` and `completion` records must be authored by the effective worker or configured Human approver. Configured Human approvers are an explicit GitHub-login allowlist in server-only configuration.
+
+Records are ordered by GitHub `createdAt`, then numeric comment ID. Edited comments are invalid after `updatedAt != createdAt`; correction requires a new record with `supersedes`. Supersession is valid only when the new record's author is authorized for its type, targets an earlier record on the same card, and does not create a cycle. A record can be superseded at most once. Malformed, unauthorized, cyclic, duplicate-supersession, or cross-card records are quarantined with a source link and never affect derived state. The effective record is the latest valid unsuperseded record of the relevant type. A terminal GitHub card status clears derived active assignment regardless of older records.
+
+Human-readable legacy comments, including the current Start Task template without a machine marker, remain visible in Live Feed but do not create deterministic assignment or approval state. Before adapter rollout, a separate workflow-pack compatibility card must add the machine marker to templates and validation; it cannot retroactively infer records from prose.
 
 Every projected object retains its source type, source identifier, source URL where applicable, source update timestamp, and projection timestamp.
 
@@ -109,7 +129,7 @@ The UI displays last-successful-sync time, current sync state, source health, an
 - PostgreSQL and Redis bind to loopback or remain internal to the Compose network.
 - Containers receive only required mounts; repository mounts are read-only.
 - The local-observation adapter accepts only configured roots and closed probe types.
-- The existing `C:\Users\Mhaiz\.openclaw` tree is never mounted wholesale into a container; a host-side read-only exporter emits a closed, redacted status document for ingestion.
+- The existing `C:\Users\Mhaiz\.openclaw` tree is never mounted into a container; the host exporter emits only the closed, redacted snapshot through the read-only export-directory mount.
 - Write/action endpoints are absent. If inherited upstream endpoints cannot be removed immediately, startup fails unless the endpoints are explicitly hard-disabled by configuration, and tests prove they return no action capability.
 - Audit and diagnostic logs redact authorization headers, tokens, cookie values, repository secrets, and local-auth material.
 
@@ -171,6 +191,7 @@ Implementation must provide:
 
 - Contract fixtures for Project items, Issues, Pull Requests, reviews, comments, and checks.
 - Exhaustive status and approval mapping tests, including unknown-value quarantine.
+- Workflow-record parser tests for every type, authorization rule, exact-head approval, edit invalidation, precedence, supersession, conflict, and malformed payload path.
 - Idempotency tests showing repeated identical syncs produce identical projection state.
 - Partial-sync and tombstone tests proving failures cannot delete or falsely complete work.
 - Rate-limit, backoff, stale-state, and recovery tests with a fake clock.
@@ -178,6 +199,7 @@ Implementation must provide:
 - Tests proving all GitHub calls are read-only and all write/action routes are absent or hard-disabled.
 - Path allowlist and command-injection tests for local observations.
 - Redaction fixtures proving the OpenClaw exporter cannot emit credentials, raw configuration, identity content, messages, media paths, or token-bearing logs.
+- Host-export tests for atomic replacement, ACL/setup failure, schema/version rejection, monotonic sequence, expiry, stale retention, and read-only container mounting.
 - Docker Compose smoke tests for health, loopback binding, migration, restart, and projection rebuild.
 - An operator acceptance test that compares representative Project #4 cards against their Mission Control rendering.
 
@@ -185,8 +207,8 @@ Implementation must provide:
 
 Each slice requires its own Kanban card, Start Task record, isolated branch/worktree, validation, review, and Human gate.
 
-1. **Pinned Mission Control Fork Bootstrap:** Create the sibling UI fork, preserve license/attribution, record `UPSTREAM.md`, hard-disable mutation routes, and establish local Compose health. Do not install, update, or reconfigure the existing OpenClaw runtime. No GitHub integration.
-2. **Read-Only GitHub Adapter:** Implement Project #4/Issue/PR/check/comment projection, polling, mapping, reconciliation, stale/error behavior, and board/read APIs.
+1. **Pinned Mission Control Fork Bootstrap:** Create the sibling UI fork from exact upstream commit `75eb8b0894803e48891a8a92b564c25fb126f2ea`, preserve license/attribution, record `UPSTREAM.md`, hard-disable mutation routes, and establish local Compose health. Do not install, update, or reconfigure the existing OpenClaw runtime. No GitHub integration.
+2. **Workflow Record Compatibility and Read-Only GitHub Adapter:** Add the v1 machine marker to governed workflow templates/validation, then implement Project #4/Issue/PR/check/comment projection, polling, deterministic record parsing, mapping, reconciliation, stale/error behavior, and board/read APIs.
 3. **Local Observability Adapter:** Add the allowlisted manifest, bounded read-only worktree/automation probes, and the redacted status exporter for the existing OpenClaw runtime, all with per-source health.
 4. **UX and Operations Hardening:** Complete board/live-feed/approval/agent/worktree/PR surfaces, security verification, backup/rebuild guidance, update runbook, and operator documentation.
 
@@ -217,7 +239,10 @@ The design is accepted when reviewers confirm that:
 - GitHub Project #4 is the sole workflow authority and the database is explicitly disposable projection state.
 - The sibling fork location, upstream pin, attribution, and controlled update policy are fixed.
 - Card, agent, approval, Pull Request/check, worktree, and automation mappings are deterministic and source-linked.
+- Concurrent cards are allowed, while each card has at most one effective primary implementer record.
+- `ai-workflow-record:v1` defines closed schemas, authorized authors, exact-head approval, precedence, supersession, and quarantine behavior.
 - Polling, idempotency, tombstones, stale state, partial failure, rate limits, and schema mismatch behavior are specified.
+- The Windows host exporter and container ingestion boundary fixes path, ACL, atomicity, freshness, expiry, and read-only mount behavior.
 - Credentials, local probes, network binding, mounts, logs, and mutation routes have closed security boundaries.
 - Windows local deployment through Docker Desktop/WSL2 is pinned.
 - ADR-23 is a mandatory pre-implementation gate.
@@ -235,6 +260,11 @@ The design is accepted when reviewers confirm that:
 | 2026-07-18 | Use polling rather than webhooks. | Fits local-only deployment without exposing an inbound endpoint. |
 | 2026-07-18 | Require ADR-23 before implementation. | The projection, ownership, dependency, and security contracts are architectural. |
 | 2026-07-18 | Defer all control actions. | Write capability requires a separate threat model, approval, and architecture revision. |
+| 2026-07-19 | Pin upstream commit `75eb8b0894803e48891a8a92b564c25fb126f2ea`. | Gives the design, ADR, and bootstrap card one immutable source tree. |
+| 2026-07-19 | Require a dedicated least-privilege GitHub credential. | The operator's `gh` token may include write scopes and is not an acceptable service credential. |
+| 2026-07-19 | Use an atomic host-export snapshot and read-only directory mount. | Pins the Windows/WSL2 container boundary without exposing runtime roots or shell access. |
+| 2026-07-19 | Permit concurrent active cards and enforce one effective primary implementer per card. | Matches repository governance for parallel work. |
+| 2026-07-19 | Define `ai-workflow-record:v1`. | Makes assignment, handoff, approval, and completion projection deterministic and auditable. |
 
 ## 12. Review Outcome Required
 
