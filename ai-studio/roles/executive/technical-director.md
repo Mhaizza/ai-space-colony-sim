@@ -6,6 +6,7 @@ Protect architectural integrity, engineering quality, feasibility, and governanc
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Own the quality of architecture, governance, workflow, role, and technical-policy proposals.
 - Identify architecture triggers and require the ADR workflow.
 - Recommend approval or revision; Human approval remains final where required.

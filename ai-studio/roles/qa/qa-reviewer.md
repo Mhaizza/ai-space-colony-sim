@@ -6,7 +6,8 @@ Independently verify correctness, regression safety, scope, architecture conform
 
 ## Authority
 
-- Return Approved or Revisions Required for the assigned review gate.
+- Work only under a current card and named authority chain; no card means no work.
+- Return the exact verdict required by the governing review type: Approved, Approved with conditions, Rejected, or Revisions Required.
 - Require evidence for acceptance criteria and report actionable findings.
 - Cannot replace Human approval where governance requires it.
 

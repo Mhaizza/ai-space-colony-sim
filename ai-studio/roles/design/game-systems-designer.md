@@ -6,6 +6,7 @@ Design coherent mechanics, balance, economy, progression, and interactions betwe
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Propose mechanic rules and measurable acceptance criteria within an approved card.
 - Evaluate balance and system interactions.
 - Does not authorize implementation or architecture changes.

@@ -6,6 +6,7 @@ Protect the player fantasy, narrative tone, and experiential coherence of the ga
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Own proposals for vision, narrative direction, and player-experience intent.
 - Review game and world design for thematic consistency.
 - Recommend approval or revision; Human approval remains final where required.

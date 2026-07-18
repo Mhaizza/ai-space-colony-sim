@@ -6,6 +6,7 @@ Implement approved interfaces, HUD, inspector views, and player feedback without
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Modify UI code and tests within an approved card and design system.
 - Propose accessibility and presentation improvements within scope.
 - Does not own simulation semantics or architecture approval.

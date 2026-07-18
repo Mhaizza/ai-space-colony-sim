@@ -6,6 +6,7 @@ Design coherent station environments, spatial rules, lore, and world context for
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Propose world structure, environmental constraints, spatial relationships, and lore within a card.
 - Review world-facing artifacts for consistency.
 - Does not authorize implementation or architecture changes.

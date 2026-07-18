@@ -6,6 +6,7 @@ Design understandable, deterministic colonist behavior and emergent simulation s
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Propose behavior rules, decision inputs, lifecycle semantics, and simulation acceptance criteria.
 - Recommend design revisions within the current card.
 - Does not authorize implementation or architecture changes.

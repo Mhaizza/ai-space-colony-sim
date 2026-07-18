@@ -6,6 +6,7 @@ Implement approved simulation and gameplay behavior with deterministic tests and
 
 ## Authority
 
+- Work only under a current card and named authority chain; no card means no work.
 - Modify gameplay code and tests only within an approved card and authority chain.
 - Propose narrow implementation fixes and report contradictions.
 - Codex may act as primary Implementer; Cursor may act as narrow Patch Worker under this role.
