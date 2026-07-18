@@ -1,6 +1,6 @@
 # ADR-23 - Mission Control Projection and Control Boundary
 
-**Status:** Proposed (revision 2 after architecture review: trust classes, canonical projection identity, audit ownership, complete workflow-record contract, polling/failure semantics, database outage, and runtime-mount boundaries closed)
+**Status:** Proposed (revision 3 after architecture review: trust classes, canonical projection identity, audit ownership, complete workflow-record contract, polling/failure semantics, database outage, runtime-mount boundaries, and repository-qualified artifact references closed)
 **Date:** 2026-07-19
 **Phase:** Tooling architecture gate
 **Deciders:** Project owner, Technical Director
@@ -104,12 +104,13 @@ The payload is a JSON object with exactly these fields and no others:
 
 WorkerId = "codex" | "claude" | "cursor" | "openclaw" | "human" | "chatgpt-reviewer"
 ReviewResult = "approved" | "revisions_required"
-ArtifactRef = "pr:<positive integer>" | "issue:<positive integer>" | "path:<normalized repository-relative path>"
+ArtifactRef = "pr:<RepoQualifier>#<positive integer>" | "issue:<RepoQualifier>#<positive integer>" | "path:<normalized repository-relative path>"
+RepoQualifier = "self" | "mission-control"
 FullCommitSha = exactly 40 lowercase hexadecimal characters
 RoleSlug = a slug present in the repository's governed role registry
 ```
 
-The record must be posted on the Issue identified by `card`; records on another Issue or only on a Pull Request are non-authoritative Live Feed entries. `path:` rejects absolute paths, backslashes, empty segments, `.`/`..` segments, percent-encoded traversal, and paths outside the repository. The per-type validity matrix is exhaustive:
+The record must be posted on the Issue identified by `card`; records on another Issue or only on a Pull Request are non-authoritative Live Feed entries. `path:` rejects absolute paths, backslashes, empty segments, `.`/`..` segments, percent-encoded traversal, and paths outside the repository. `pr:`/`issue:` references are repository-qualified because D1 places Mission Control implementation in a sibling repository: `self` resolves to `Mhaizza/ai-space-colony-sim` (the repository hosting the record); `mission-control` resolves to the exact `owner/repo` that D1's fork bootstrap records as `origin` in `UPSTREAM.md`, mirrored into server-only configuration. A `mission-control`-qualified artifact is malformed and quarantined until that mapping exists — there is nothing yet for it to resolve to. Any qualifier other than `self` or `mission-control`, or an unqualified `pr:<number>`/`issue:<number>`, is malformed. The per-type validity matrix is exhaustive; every `pr:`/`issue:` cell below requires a valid `RepoQualifier`:
 
 | `type` | `worker` | `role` | `artifact` | `head` | `result` | `supersedes` |
 |---|---|---|---|---|---|---|
@@ -142,6 +143,7 @@ The following are structural rules:
 - ordering is GitHub `createdAt`, then numeric comment ID.
 - supersession is same-card, earlier-record, authorized, acyclic, and one-to-one.
 - unknown fields, missing fields, invalid nullability, unknown enums, abbreviated heads, duplicate records, conflicting effective assignment, unauthorized authors, and malformed supersession are quarantined.
+- an `ArtifactRef` with a missing, unqualified, unknown, or not-yet-resolvable `RepoQualifier` is quarantined.
 - a terminal authoritative GitHub card status clears active derived assignment.
 
 For each card and relevant record type, the effective record is the latest valid, unsuperseded record by the ordering above. A superseded record is never effective. Multiple valid unsuperseded assignment records that claim different primary implementers are a conflict: the card's derived assignment is quarantined rather than selecting a winner. Multiple cards may be active concurrently, but at most one primary implementer record is effective per card. Legacy prose remains visible in Live Feed but never creates assignment, review, or approval state.
@@ -199,7 +201,7 @@ Read-only acceptance cannot be interpreted as deferred permission to add control
 2. Mission Control projection/cache is rebuildable; local audit history is non-authoritative, separately retained, and may be lost. Neither is an independent work queue.
 3. Projection identity uses the closed D3 `sourceType` union and canonical immutable `sourceId`; only a complete successful partition read can tombstone absent records in that partition.
 4. Partial failure or projection-store outage never infers empty state, deletion, completion, reassignment, approval, or status change.
-5. Derived agent and gate state comes only from records matching the exhaustive `ai-workflow-record:v1` schema/matrix and exact GitHub source facts; prose is never parsed as authority; effective records use latest-valid-unsuperseded precedence.
+5. Derived agent and gate state comes only from records matching the exhaustive `ai-workflow-record:v1` schema/matrix and exact GitHub source facts; prose is never parsed as authority; effective records use latest-valid-unsuperseded precedence. Every `pr:`/`issue:` artifact reference is repository-qualified (`self` or `mission-control`); an unqualified or unresolvable reference is never effective.
 6. Worker, reviewer, and Human principals are disjoint trust classes. Review and Human approval are exact-head facts and never survive a head change.
 7. The GitHub token has exactly `read:project`; broader, missing, or write-capable scope fails closed.
 8. Containers receive only the redacted host-export directory at runtime; no host repository, source tree, worktree, or OpenClaw root is mounted.
@@ -269,6 +271,7 @@ One control plane, a rebuildable projection, explicit source health, and reversi
 - Idempotency, partition-completeness tombstone, cross-partition isolation, partial-failure non-deletion, polling/manual-refresh equivalence, no-webhook surface, rate-limit metadata/backoff/jitter/degraded-health, stale, projection-store outage/unavailable-state, and projection-rebuild tests.
 - Projection-key tests covering every closed source type, canonical GitHub node ID, stable local manifest UUID, mutable display attributes, and remove-plus-add identity changes.
 - Exhaustive `ai-workflow-record:v1` parser tests covering every matrix row and nullability violation, unknown/extra fields and enums, artifact/path validation, Issue/card binding, disjoint trust classes, login-class overlap and missing-custody-attestation rejection, worker impersonation of reviewer/Human, handoff target worker/role, Kanban/completion authors, exact-head gates, edits, latest-valid-unsuperseded precedence, supersession, cycles, assignment conflicts, and malformed records.
+- Repository-qualifier tests: `self`- and `mission-control`-qualified artifacts accepted correctly, an unqualified `pr:<number>`/`issue:<number>` rejected, an unknown qualifier rejected, and a `mission-control`-qualified artifact rejected until D1's fork-bootstrap `owner/repo` mapping is recorded in server-only configuration.
 - Credential tests requiring exactly `read:project`, rejecting broader/missing scopes, and probing every required public read endpoint.
 - Exporter tests for redaction, fixed paths, ACL/setup failure, atomic replacement, schema version, session restart, sequence, expiry, replay, and stale retention.
 - Compose tests proving host-loopback-only publication, internal-only PostgreSQL/Redis, no runtime host mounts except the read-only export directory, local auth, and absent/hard-disabled write routes.
@@ -300,6 +303,7 @@ Revise this ADR before any of the following:
 | Closed source types, canonical IDs, partition-scoped validate-never-infer reconciliation | Makes sync idempotent, rebuild-stable, and partial failure safe | Display/path identity; heuristic repair; deletion on failed/partial reads |
 | Polling/manual refresh only; bounded rate-limit backoff | Keeps the local MVP outbound-only and failure-safe | Inbound webhooks; busy retry; inferred completeness on failure |
 | Exhaustive `ai-workflow-record:v1` schema/matrix, latest-valid-unsuperseded precedence, and disjoint Worker/Reviewer/Human trust classes | Deterministic, source-linked assignment and non-forgeable gates | Delegated payload shape; parsing prose; incomplete precedence; inferring actor from payload; shared cross-class credential |
+| Repository-qualified `pr:`/`issue:` artifacts (`self` \| `mission-control`, tied to D1's fork identity) | D1 puts implementation in a sibling repository; an unqualified PR number cannot bind an exact-head gate to the correct repository | Unqualified artifact numbers; constraining every artifact to one repository (would make Slice 1's fork-bootstrap PR ungatable) |
 | Dedicated classic PAT with exactly `read:project` | Reads user Project #4 without broad operator credentials | Operator `gh` token; write-scoped token |
 | Atomic redacted host export and read-only mount | Observes local health without exposing roots or shell access | Direct mounts; loopback command API; arbitrary probes |
 | Compose host-loopback publication | Local usability without LAN/database exposure | Wildcard host ports; container-loopback binding |
@@ -311,9 +315,9 @@ Revise this ADR before any of the following:
 ## Kanban Update
 
 **Card:** ADR-23 - Mission Control Projection and Control Boundary (#142)
-**Status:** Review - ADR status Proposed; revision 2 closes the seven architecture-review findings plus three valid inline follow-ups; awaiting architecture re-review and Human acceptance.
-**Completed:** Drafted ADR-23 from the accepted Mission Control design v0.4.0 and revised D2-D4/D7 after architecture review: projection and audit loss semantics are separated; every source has a canonical ID and completeness partition; polling/manual-refresh and rate-limit behavior are structural; Worker/Reviewer/Human principals and credentials are disjoint; the full workflow-record field/nullability matrix, handoff/update/completion author rules, and latest-valid-unsuperseded precedence are explicit; projection-store outage is unavailable rather than empty; runtime host mounts are limited to the redacted export directory. Repository/upstream, credential scope, Windows host export, local deployment, and future-control boundaries remain otherwise unchanged.
+**Status:** Review - ADR status Proposed; revision 3 closes the seven architecture-review findings, three valid inline follow-ups, and one additional inline finding (repository-qualified artifacts); awaiting architecture re-review and Human acceptance.
+**Completed:** Drafted ADR-23 from the accepted Mission Control design v0.4.0 and revised D2-D4/D7 after architecture review: projection and audit loss semantics are separated; every source has a canonical ID and completeness partition; polling/manual-refresh and rate-limit behavior are structural; Worker/Reviewer/Human principals and credentials are disjoint; the full workflow-record field/nullability matrix, handoff/update/completion author rules, and latest-valid-unsuperseded precedence are explicit; projection-store outage is unavailable rather than empty; runtime host mounts are limited to the redacted export directory; `pr:`/`issue:` artifact references are repository-qualified (`self` | `mission-control`) so exact-head gates cannot bind to the wrong repository once D1's sibling fork opens its own Pull Requests. Repository/upstream, credential scope, Windows host export, local deployment, and future-control boundaries remain otherwise unchanged.
 **Changed Files:**
   CREATED  ai-studio/adr/0023-mission-control-projection-and-control-boundary.md
-**Validation:** Traced every decision to design v0.4.0, Issue #142, the Architecture Workflow, or an explicit architecture-review correction; confirmed no gameplay ADR is reopened; confirmed the existing OpenClaw runtime and all implementation files remain untouched. Added required tests for trust-class impersonation/overlap, source identity/partitions, polling/rate-limit behavior, full record-matrix/precedence, audit-loss reporting, database outage, and runtime mount isolation.
+**Validation:** Traced every decision to design v0.4.0, Issue #142, the Architecture Workflow, or an explicit architecture-review correction; confirmed no gameplay ADR is reopened; confirmed the existing OpenClaw runtime and all implementation files remain untouched. Added required tests for trust-class impersonation/overlap, source identity/partitions, polling/rate-limit behavior, full record-matrix/precedence, audit-loss reporting, database outage, runtime mount isolation, and repository-qualifier validation.
 **Follow-up Tasks:** Architecture re-review, then Human acceptance. Only after acceptance may the five implementation cards be opened in dependency order.
