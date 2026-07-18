@@ -1,6 +1,6 @@
 # AI Workflow Mission Control Design
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 
 **Status:** Proposed
 
@@ -71,7 +71,9 @@ The fork gains a server-side GitHub projection adapter behind the existing backe
 4. An idempotent projector upserts records into the Mission Control database.
 5. Read APIs return projection data and source-health metadata to the frontend.
 
-The MVP must not reuse the operator's authenticated `gh` session. It uses a dedicated server-only fine-grained personal access token created solely for Mission Control. Its access is limited to the `Mhaizza/ai-space-colony-sim` repository and the owning user's Project #4, with only these read permissions: account Projects, repository Metadata, Issues, Pull requests, Actions, and Commit statuses. All write permissions and access to other repositories are excluded. Startup performs read-only capability probes for Project #4 and the repository and fails closed if either resource is inaccessible. Credential provisioning records the reviewed permission set outside the repository; rotating the token does not change projection identity. Credentials never enter browser bundles, API responses, logs, or persisted projection rows.
+The MVP must not reuse the operator's authenticated `gh` session. Because Project #4 is user-owned and GitHub does not support fine-grained PATs for user-owned Project item access, the service uses a dedicated classic personal access token created solely for Mission Control with exactly the single OAuth scope `read:project`. GitHub documents that scope as read-only access to user and organization Projects. The target repository is public, so its Issues, Pull Requests, comments, checks, actions, metadata, and commit statuses are read through public read endpoints without adding `repo`, `public_repo`, `workflow`, or any write scope.
+
+At startup the backend inspects the GitHub response's `X-OAuth-Scopes` header and requires its normalized set to equal `{read:project}` exactly; missing, additional, or write-capable scopes fail closed. It then performs read-only capability probes for user-owned Project #4 and `Mhaizza/ai-space-colony-sim` and fails closed if either is inaccessible. Credential provisioning records the reviewed scope outside the repository; rotating the token does not change projection identity. Credentials never enter browser bundles, API responses, logs, or persisted projection rows. This contract follows GitHub's [Projects API authentication guidance](https://docs.github.com/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects) and [OAuth scope definition](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps).
 
 Local machine state is supplied by a host-side read-only exporter plus a container-side ingestion adapter. The exporter runs as the current Windows user, reads an allowlisted manifest and bounded probes for registered worktrees, automation state, and the existing OpenClaw runtime, then writes one versioned JSON snapshot to `C:\Users\Mhaiz\AppData\Local\ai-space-colony-mission-control\export\host-status.json`. It writes a temporary file in the same directory, flushes it, and atomically replaces the destination. The directory ACL permits only the current user and `SYSTEM` to write. Docker Compose mounts only the export directory into the backend container at `/run/mission-control-host:ro`; no runtime or repository root is mounted.
 
@@ -123,7 +125,7 @@ The UI displays last-successful-sync time, current sync state, source health, an
 
 ### D6. Security and Control Boundary
 
-- Frontend and backend bind to `127.0.0.1` only.
+- Frontend and backend processes listen on their container interfaces. Docker Compose is the network boundary and publishes only `127.0.0.1:3000:3000` and `127.0.0.1:8000:8000` to the Windows host; no wildcard host publish is permitted.
 - Local authentication uses a random token of at least 50 characters when Clerk is not configured.
 - GitHub credentials are server-side only and receive read-only minimum scopes for the MVP.
 - PostgreSQL and Redis bind to loopback or remain internal to the Compose network.
@@ -157,7 +159,7 @@ Visible controls inherited from upstream that would mutate state are removed or 
 
 ### D9. Local Deployment
 
-The supported deployment is Docker Compose under Docker Desktop's WSL2 Linux backend. The web application defaults to `127.0.0.1:3000`, the backend to `127.0.0.1:8000`, and PostgreSQL/Redis to the internal Compose network unless a loopback diagnostic port is explicitly enabled. The existing OpenClaw runtime remains independently managed at `C:\Users\Mhaiz\.openclaw`; Mission Control neither owns its lifecycle nor shares its credential/configuration directories.
+The supported deployment is Docker Compose under Docker Desktop's WSL2 Linux backend. Frontend and backend processes listen on `0.0.0.0` inside their containers so Docker can route traffic, while Compose publishes them only as `127.0.0.1:3000:3000` and `127.0.0.1:8000:8000` on the Windows host. PostgreSQL and Redis remain on the internal Compose network with no host port by default; a separately approved diagnostic profile may publish them to host loopback only. The existing OpenClaw runtime remains independently managed at `C:\Users\Mhaiz\.openclaw`; Mission Control neither owns its lifecycle nor shares its credential/configuration directories.
 
 Configuration and secrets live in ignored local environment files. A checked-in example contains names and safe defaults only. Persistent volumes hold projection data but are treated as rebuildable cache, not workflow authority.
 
@@ -196,11 +198,13 @@ Implementation must provide:
 - Partial-sync and tombstone tests proving failures cannot delete or falsely complete work.
 - Rate-limit, backoff, stale-state, and recovery tests with a fake clock.
 - Credential-redaction and frontend-bundle checks.
+- Authentication tests requiring the exact `read:project` scope set, rejecting broader/missing scopes, and proving Project #4 plus public-repository read capability.
 - Tests proving all GitHub calls are read-only and all write/action routes are absent or hard-disabled.
 - Path allowlist and command-injection tests for local observations.
 - Redaction fixtures proving the OpenClaw exporter cannot emit credentials, raw configuration, identity content, messages, media paths, or token-bearing logs.
 - Host-export tests for atomic replacement, ACL/setup failure, schema/version rejection, monotonic sequence, expiry, stale retention, and read-only container mounting.
 - Docker Compose smoke tests for health, loopback binding, migration, restart, and projection rebuild.
+- Network tests proving application processes are container-reachable while published ports bind only to Windows host loopback and PostgreSQL/Redis have no default host publish.
 - An operator acceptance test that compares representative Project #4 cards against their Mission Control rendering.
 
 ## 8. Implementation Slices
@@ -244,6 +248,7 @@ The design is accepted when reviewers confirm that:
 - Polling, idempotency, tombstones, stale state, partial failure, rate limits, and schema mismatch behavior are specified.
 - The Windows host exporter and container ingestion boundary fixes path, ACL, atomicity, freshness, expiry, and read-only mount behavior.
 - Credentials, local probes, network binding, mounts, logs, and mutation routes have closed security boundaries.
+- The dedicated GitHub credential has exactly the classic PAT `read:project` scope and fails closed on broader or missing scopes.
 - Windows local deployment through Docker Desktop/WSL2 is pinned.
 - ADR-23 is a mandatory pre-implementation gate.
 - Implementation is divided into independently reviewable cards.
@@ -265,6 +270,8 @@ The design is accepted when reviewers confirm that:
 | 2026-07-19 | Use an atomic host-export snapshot and read-only directory mount. | Pins the Windows/WSL2 container boundary without exposing runtime roots or shell access. |
 | 2026-07-19 | Permit concurrent active cards and enforce one effective primary implementer per card. | Matches repository governance for parallel work. |
 | 2026-07-19 | Define `ai-workflow-record:v1`. | Makes assignment, handoff, approval, and completion projection deterministic and auditable. |
+| 2026-07-19 | Use a dedicated classic PAT with exactly `read:project`. | User-owned Project #4 is not supported by fine-grained PAT item access; public repository reads need no broader scope. |
+| 2026-07-19 | Bind loopback at the Compose host-publish layer. | Keeps containers reachable through Docker while preventing LAN exposure from the Windows host. |
 
 ## 12. Review Outcome Required
 
