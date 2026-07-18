@@ -1,13 +1,13 @@
 # ADR-23 - Mission Control Projection and Control Boundary
 
-**Status:** Proposed
+**Status:** Proposed (revision 1 after architecture review: trust classes, canonical projection identity, audit ownership, workflow-record precedence, and polling/failure semantics closed)
 **Date:** 2026-07-19
 **Phase:** Tooling architecture gate
 **Deciders:** Project owner, Technical Director
 **Tracks:** GitHub issue #142 (parent #140)
 **Governed by:** `docs/superpowers/specs/2026-07-18-ai-workflow-mission-control-design.md` v0.4.0 (Human-approved at PR #141 head `4088b7077af5b9ffce483b0dd4a16b295490902b`, merged as `721a5001b1c8717b97f7709f11d860c4ccdc5bbc`), `docs/ai-workflow/operating-model.md`, `ai-studio/workflows/architecture-workflow.md`, `ai-studio/constitution/architecture-philosophy.md`, and `ai-studio/constitution/principles.md`
 
-**This ADR does not contain:** implementation library choices, UI layout, polling/tuning values, database table definitions, Docker image versions, workflow-template edits, or permission to install or modify OpenClaw. Those remain implementation decisions or separate cards under the accepted design. This ADR records only the inter-system authority, persistence ownership, identity/reconciliation, machine-record, credential, host/container, deployment, upstream, and future-control boundaries that must be stable before implementation.
+**This ADR does not contain:** implementation library choices, UI layout, polling interval/tuning values, database table definitions, Docker image versions, workflow-template edits, or permission to install or modify OpenClaw. Those remain implementation decisions or separate cards under the accepted design. This ADR records only the inter-system authority, persistence ownership, identity/reconciliation, machine-record, credential, host/container, deployment, upstream, and future-control boundaries that must be stable before implementation.
 
 ---
 
@@ -17,7 +17,7 @@ The project's governed workflow is distributed across GitHub Project #4, Issues,
 
 That design introduces architecture triggers: a standalone repository and dependency boundary, an inter-system GitHub contract, a persistent projection, a machine-readable workflow record, a credential boundary, and a Windows-host-to-container communication path. Without an accepted decision, implementation could accidentally create a second task system, infer approvals from prose, expose the operator's broad credentials or OpenClaw secrets, or make read-only observation a back door for control actions.
 
-The decision must preserve the constitution's single-owner rule, explicit interfaces, validation at boundaries, Human approval gates, and reversibility. The Mission Control database must remain rebuildable and subordinate to GitHub.
+The decision must preserve the constitution's single-owner rule, explicit interfaces, validation at boundaries, Human approval gates, and reversibility. The Mission Control projection must remain rebuildable and subordinate to GitHub; non-authoritative local audit history has separate retention and loss semantics.
 
 ## Decision
 
@@ -41,15 +41,38 @@ Mission Control owns only:
 - a disposable projection of allowlisted local health records;
 - sync cursors and source-health metadata;
 - quarantine records for malformed or unauthorized inputs; and
-- operational audit records for sync attempts, mapping errors, health transitions, and local refresh requests.
+- non-authoritative operational audit records for sync attempts, mapping errors, health transitions, and local refresh requests.
 
-Projection and audit state are never simulation state, project authority, approval authority, or an independent work queue. Loss of the Mission Control database must not lose a workflow decision. A complete rebuild from GitHub plus current allowlisted local snapshots must restore the observable state.
+Projection and audit state are never simulation state, project authority, approval authority, or an independent work queue. Projection/cache is disposable and rebuildable: a complete rebuild from GitHub plus current allowlisted local snapshots restores current observable workflow and health state. Audit history is not rebuildable from those sources. It is bounded local evidence, may be lost when its store is destroyed, and must never be presented as reconstructed history after a rebuild. Loss of either store must not lose or change a workflow decision.
 
 ### D3 - Stable projection identity and validate-never-infer reconciliation
 
-Every projected entity is identified by the closed tuple `(sourceType, sourceId)`, where `sourceType` distinguishes GitHub Project items, Issues, Pull Requests, comments, reviews, checks, workflow runs, commit statuses, worktrees, automation health, and OpenClaw health. The projection retains the source URL when one exists, source update time, last observed time, and last successful projection time.
+Every projected entity is identified by the closed tuple `(sourceType, sourceId)`. The persisted `sourceType` union and canonical `sourceId` rules are:
 
-Sync is an idempotent upsert. Repeating the same complete source response produces the same projection. Only a successful, explicitly complete enumeration for one source may tombstone records absent from that source. Partial, failed, rate-limited, unauthorized, or schema-invalid reads never infer deletion, completion, reassignment, approval, or status change. Tombstones remain source-linked and may be retained for the design's bounded operational period.
+| `sourceType` | Canonical `sourceId` | Completeness/tombstone partition |
+|---|---|---|
+| `github_project_item` | GitHub global node ID of the `ProjectV2Item` | Project #4 global node ID |
+| `github_issue` | GitHub global node ID of the Issue | `Mhaizza/ai-space-colony-sim` repository node ID |
+| `github_pull_request` | GitHub global node ID of the Pull Request | Repository node ID |
+| `github_issue_comment` | GitHub global node ID of the Issue comment | Parent Issue or Pull Request global node ID |
+| `github_pull_request_review` | GitHub global node ID of the Pull Request review | Parent Pull Request global node ID |
+| `github_check_suite` | GitHub REST `node_id` of the check suite | Tracked Pull Request head commit OID |
+| `github_check_run` | GitHub REST `node_id` of the check run | Parent check-suite `node_id` |
+| `github_workflow_run` | GitHub REST `node_id` of the Actions workflow run | Tracked Pull Request head commit OID |
+| `github_commit_status` | GitHub REST `node_id` of the commit status | Commit OID |
+| `local_worktree` | Immutable UUID `worktreeId` declared by the allowlisted host manifest | Host-manifest installation ID |
+| `local_automation` | Immutable UUID `automationId` declared by the allowlisted host manifest | Host-manifest installation ID |
+| `local_openclaw` | Immutable UUID `openclawInstanceId` declared once for the observed installation | Host-manifest installation ID |
+
+Display numbers, names, URLs, branches, filesystem paths, process IDs, and process names are attributes, never identity. A local entity keeps its manifest UUID when those attributes change. Changing a canonical ID is a remove-plus-add source event, not an in-place identity repair.
+
+The projection retains the source URL when one exists, source update time, last observed time, last successful projection time, and the completeness partition. A partition is complete only after every page and required child query for that partition succeeds under one sync attempt. Tombstones are scoped to the completed partition; success in one partition cannot tombstone another.
+
+The MVP initiates synchronization only through outbound scheduled polling or a local manual refresh that invokes the same read-only sync path. It exposes no inbound webhook or external event-ingestion endpoint. Poll interval and numeric backoff limits remain tuning under the accepted design; changing to webhooks or another inbound mechanism is an ADR revisit.
+
+Sync is an idempotent upsert. Repeating the same complete source response produces the same projection. Only a successful, explicitly complete enumeration for one partition may tombstone records absent from that partition. Partial, failed, rate-limited, unauthorized, or schema-invalid reads never infer deletion, completion, reassignment, approval, or status change. Tombstones remain source-linked and may be retained for the design's bounded operational period.
+
+On GitHub rate limit, the sync client honors reset and retry metadata, applies bounded exponential backoff with jitter, and exposes degraded source health. It does not busy-loop, bypass the reset window, mark the source healthy, or commit completeness-based tombstones. Numeric delay bounds are tuning, but honoring server metadata, bounded backoff, jitter, and degraded health are structural behavior.
 
 Unknown enum members, malformed records, and unsupported external schema shapes are quarantined rather than coerced. Quarantine preserves non-secret diagnostic metadata and the source link, does not affect derived workflow state, and exposes source degradation. The system validates and rejects; it does not repair authoritative input.
 
@@ -63,14 +86,21 @@ Machine-readable workflow comments contain exactly one `ai-workflow-record:v1` H
 start_task | handoff | review_result | human_approval | kanban_update | completion
 ```
 
-The authenticated GitHub author, comment ID, `createdAt`, and `updatedAt` are source facts. The payload cannot claim its own actor. A server-only principal registry maps GitHub logins to allowed worker identities and roles and separately marks Human approvers and reviewer principals. Worker identity on a shared login is a governed declaration allowed only by that registry; it is not independent process authentication.
+The authenticated GitHub author, comment ID, `createdAt`, and `updatedAt` are source facts. The payload cannot claim its own actor. A server-only principal registry maps GitHub logins into exactly one of three disjoint trust classes:
+
+- **Worker principal:** may declare only its explicitly allowlisted worker identities and roles.
+- **Reviewer principal:** may author `review_result` only and has credentials unavailable to workers.
+- **Human approver principal:** may assign/start/handoff work and author `human_approval`; its credential is Human-only and unavailable to every AI agent, reviewer runtime, OpenClaw runtime, Mission Control service, and automation process.
+
+One GitHub login cannot belong to more than one trust class. Startup fails closed on overlapping login membership, unknown principal classes, or missing custody attestation metadata. The Human owner provisions and rotates Human/reviewer/worker credentials outside Mission Control and attests that each credential is available only to its declared class; the service cannot compare secret tokens it correctly never receives. The service stores no Human or reviewer posting credential because the MVP is read-only. Shared GitHub credentials may represent multiple workers only inside the Worker class when every allowed worker identity/role is explicitly enumerated. Worker identity then remains a governed declaration, not independent process authentication.
 
 The following are structural rules:
 
-- `start_task` is valid only from a registered worker declaring an allowed identity/role or from a Human approver assigning one.
-- `handoff` is valid only from the effective worker principal or a Human approver and must supersede the effective assignment record.
-- `review_result` is valid only from a configured reviewer, carries `approved` or `revisions_required`, and identifies an exact Pull Request and full 40-character head SHA.
-- `human_approval` is valid only from a configured Human approver and identifies an exact Pull Request and full head SHA.
+- `start_task` is valid only from a registered Worker principal declaring an allowed identity/role or from the Human approver assigning one.
+- `handoff` is valid only from the effective Worker principal or Human approver, must identify the next worker and role, and must supersede the effective assignment record.
+- `review_result` is valid only from the disjoint Reviewer principal, carries `approved` or `revisions_required`, and identifies an exact Pull Request and full 40-character head SHA.
+- `human_approval` is valid only from the disjoint Human approver principal and identifies an exact Pull Request and full head SHA.
+- `kanban_update` and `completion` are valid only from the effective Worker principal or Human approver.
 - approval or review of one head never applies to another head.
 - edited comments are invalid; correction is a new authorized record with explicit supersession.
 - ordering is GitHub `createdAt`, then numeric comment ID.
@@ -78,7 +108,7 @@ The following are structural rules:
 - unknown fields, missing fields, invalid nullability, unknown enums, abbreviated heads, duplicate records, conflicting effective assignment, unauthorized authors, and malformed supersession are quarantined.
 - a terminal authoritative GitHub card status clears active derived assignment.
 
-Multiple cards may be active concurrently. At most one primary implementer record is effective per card. Legacy prose remains visible in Live Feed but never creates assignment, review, or approval state.
+For each card and relevant record type, the effective record is the latest valid, unsuperseded record by the ordering above. A superseded record is never effective. Multiple valid unsuperseded assignment records that claim different primary implementers are a conflict: the card's derived assignment is quarantined rather than selecting a winner. Multiple cards may be active concurrently, but at most one primary implementer record is effective per card. Legacy prose remains visible in Live Feed but never creates assignment, review, or approval state.
 
 The workflow templates and validator must adopt this record contract in a separate prerequisite card before the GitHub adapter consumes it. The adapter cannot infer or backfill machine records from historical prose.
 
@@ -130,11 +160,11 @@ Read-only acceptance cannot be interpreted as deferred permission to add control
 ## Required Invariants
 
 1. GitHub remains the sole source of card, scope, review, approval, and completion truth.
-2. Mission Control persistence is rebuildable projection/audit state and never an independent work queue.
-3. Projection identity is `(sourceType, sourceId)`; complete successful reads alone can tombstone absent records.
+2. Mission Control projection/cache is rebuildable; local audit history is non-authoritative, separately retained, and may be lost. Neither is an independent work queue.
+3. Projection identity uses the closed D3 `sourceType` union and canonical immutable `sourceId`; only a complete successful partition read can tombstone absent records in that partition.
 4. Partial failure never infers deletion, completion, reassignment, approval, or status change.
-5. Derived agent and gate state comes only from valid `ai-workflow-record:v1` records and exact GitHub source facts; prose is never parsed as authority.
-6. Review and Human approval are exact-head facts and never survive a head change.
+5. Derived agent and gate state comes only from valid `ai-workflow-record:v1` records and exact GitHub source facts; prose is never parsed as authority; effective records use latest-valid-unsuperseded precedence.
+6. Worker, reviewer, and Human principals are disjoint trust classes. Review and Human approval are exact-head facts and never survive a head change.
 7. The GitHub token has exactly `read:project`; broader, missing, or write-capable scope fails closed.
 8. Containers receive only the redacted host-export directory; runtime and repository roots are not mounted.
 9. Host observations are versioned, atomic, expiry-bounded, restart-safe, and replay-resistant.
@@ -186,25 +216,27 @@ One control plane, a rebuildable projection, explicit source health, and reversi
 
 - A dedicated classic PAT must be created, protected, rotated, and scope-checked.
 - The workflow pack needs a compatibility card before deterministic agent/approval panels can be complete.
+- Worker automation must use credentials distinct from the Human-only and reviewer-only GitHub principals; existing shared-owner credentials cannot produce trusted Human/reviewer records.
 - A Windows host exporter adds a separately operated component and ACL/freshness tests.
 - The fork creates an ongoing controlled upstream-maintenance responsibility.
 
 ### Neutral / Deferred
 
-- Poll interval, stale threshold, retention duration, database schema, and UI component shape remain implementation/tuning choices within the design bounds.
-- Remote deployment, organization-owned Projects, webhook ingestion, and every write/control action are future architecture work.
+- Poll interval, numeric backoff limits, stale threshold, retention duration, database schema, and UI component shape remain implementation/tuning choices within the design bounds.
+- Remote deployment, organization-owned Projects, inbound webhook/event ingestion, and every write/control action are future architecture work.
 - The existing OpenClaw runtime remains independently managed and is neither upgraded nor repaired by this initiative.
 
 ## Validation Required Before Implementation
 
 - Verify the fork tree equals upstream commit `75eb8b0894803e48891a8a92b564c25fb126f2ea`, preserves MIT attribution, and records both remotes.
 - Contract tests for all Project/Issue/Pull Request/comment/review/Actions/status/check source fixtures and unknown-shape quarantine.
-- Idempotency, complete-source tombstone, partial-failure non-deletion, rate-limit, stale, and rebuild tests.
-- Exhaustive `ai-workflow-record:v1` parser tests covering author authority, principal mapping, exact-head gates, edits, precedence, supersession, cycles, conflicts, and malformed records.
+- Idempotency, partition-completeness tombstone, cross-partition isolation, partial-failure non-deletion, polling/manual-refresh equivalence, no-webhook surface, rate-limit metadata/backoff/jitter/degraded-health, stale, and projection-rebuild tests.
+- Projection-key tests covering every closed source type, canonical GitHub node ID, stable local manifest UUID, mutable display attributes, and remove-plus-add identity changes.
+- Exhaustive `ai-workflow-record:v1` parser tests covering disjoint trust classes, login-class overlap and missing-custody-attestation rejection, worker impersonation of reviewer/Human, handoff target worker/role, Kanban/completion authors, exact-head gates, edits, latest-valid-unsuperseded precedence, supersession, cycles, assignment conflicts, and malformed records.
 - Credential tests requiring exactly `read:project`, rejecting broader/missing scopes, and probing every required public read endpoint.
 - Exporter tests for redaction, fixed paths, ACL/setup failure, atomic replacement, schema version, session restart, sequence, expiry, replay, and stale retention.
 - Compose tests proving host-loopback-only publication, internal-only PostgreSQL/Redis, minimal read-only mounts, local auth, and absent/hard-disabled write routes.
-- A destructive-cache test proving projection deletion followed by sync reconstructs workflow state from authoritative sources.
+- A destructive-cache test proving projection deletion followed by sync reconstructs current workflow state from authoritative sources while clearly reporting that destroyed local audit history was not reconstructed.
 
 ## Revisit Triggers
 
@@ -213,9 +245,11 @@ Revise this ADR before any of the following:
 - Mission Control writes to GitHub or local repositories/processes.
 - Project authority moves away from GitHub Project #4 or becomes organization-owned.
 - Credentials require a scope beyond exactly `read:project`.
-- Webhooks or remote deployment introduce an inbound trust boundary.
+- Polling/manual-refresh initiation changes or webhooks/remote deployment introduce an inbound trust boundary.
 - Containers receive direct repository, worktree, or OpenClaw runtime mounts.
 - `ai-workflow-record:v1` changes fields, types, authority, ordering, supersession, or exact-head semantics.
+- Principal trust classes overlap, credential custody changes, or an agent gains a Human/reviewer credential.
+- A persisted source type, canonical source ID rule, or completeness partition changes.
 - Projection records become behavior/decision input for an agent rather than operator observation.
 - The adopted OpenClaw upstream commit changes.
 
@@ -224,9 +258,11 @@ Revise this ADR before any of the following:
 | Decision | Rationale | Alternatives rejected |
 |---|---|---|
 | Standalone fork pinned to exact upstream SHA | Isolates tooling lifecycle and makes adoption reproducible | Embed in simulation repo; floating upstream |
-| GitHub sole authority; projection/audit only | Prevents split-brain work and keeps cache rebuildable | Mission Control task authority; bidirectional MVP |
-| Stable source identity and validate-never-infer reconciliation | Makes sync idempotent and partial failure safe | Heuristic repair; deletion on failed/partial reads |
-| Closed `ai-workflow-record:v1` | Deterministic, source-linked assignment and gates | Parsing prose; inferring actor from payload |
+| GitHub sole authority; projection/audit only | Prevents split-brain work and keeps current projection rebuildable | Mission Control task authority; bidirectional MVP |
+| Projection rebuildable; audit non-authoritative and not reconstructable | Distinguishes current derived state from local historical evidence | Claiming reconstructed audit history after cache loss |
+| Closed source types, canonical IDs, partition-scoped validate-never-infer reconciliation | Makes sync idempotent, rebuild-stable, and partial failure safe | Display/path identity; heuristic repair; deletion on failed/partial reads |
+| Polling/manual refresh only; bounded rate-limit backoff | Keeps the local MVP outbound-only and failure-safe | Inbound webhooks; busy retry; inferred completeness on failure |
+| Closed `ai-workflow-record:v1`, latest-valid-unsuperseded precedence, and disjoint Worker/Reviewer/Human trust classes | Deterministic, source-linked assignment and non-forgeable gates | Parsing prose; incomplete precedence; inferring actor from payload; shared cross-class credential |
 | Dedicated classic PAT with exactly `read:project` | Reads user Project #4 without broad operator credentials | Operator `gh` token; write-scoped token |
 | Atomic redacted host export and read-only mount | Observes local health without exposing roots or shell access | Direct mounts; loopback command API; arbitrary probes |
 | Compose host-loopback publication | Local usability without LAN/database exposure | Wildcard host ports; container-loopback binding |
@@ -237,9 +273,9 @@ Revise this ADR before any of the following:
 ## Kanban Update
 
 **Card:** ADR-23 - Mission Control Projection and Control Boundary (#142)
-**Status:** Review - ADR status Proposed; awaiting architecture review and Human acceptance.
-**Completed:** Drafted ADR-23 from the accepted Mission Control design v0.4.0, covering only the architecture trigger surface: repository/upstream boundary, authority and persistence ownership, projection identity/reconciliation, deterministic workflow records, credential scope, Windows host export, local deployment, and future-control gate.
+**Status:** Review - ADR status Proposed; revision 1 closes the seven architecture-review findings; awaiting architecture re-review and Human acceptance.
+**Completed:** Drafted ADR-23 from the accepted Mission Control design v0.4.0 and revised D2-D4 after architecture review: projection and audit loss semantics are separated; every source has a canonical ID and completeness partition; polling/manual-refresh and rate-limit behavior are structural; Worker/Reviewer/Human principals and credentials are disjoint; handoff/update/completion author rules and latest-valid-unsuperseded precedence are explicit. Repository/upstream, credential scope, Windows host export, local deployment, and future-control boundaries remain unchanged.
 **Changed Files:**
   CREATED  ai-studio/adr/0023-mission-control-projection-and-control-boundary.md
-**Validation:** Traced every decision to design v0.4.0; confirmed no gameplay ADR is reopened; confirmed the existing OpenClaw runtime and all implementation files remain untouched.
-**Follow-up Tasks:** Architecture review, then Human acceptance. Only after acceptance may the five implementation cards be opened in dependency order.
+**Validation:** Traced every decision to design v0.4.0, Issue #142, the Architecture Workflow, or an explicit architecture-review correction; confirmed no gameplay ADR is reopened; confirmed the existing OpenClaw runtime and all implementation files remain untouched. Added required tests for trust-class impersonation/overlap, source identity/partitions, polling/rate-limit behavior, effective-record precedence, and audit-loss reporting.
+**Follow-up Tasks:** Architecture re-review, then Human acceptance. Only after acceptance may the five implementation cards be opened in dependency order.
