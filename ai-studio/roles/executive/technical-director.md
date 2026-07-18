@@ -44,4 +44,4 @@ Protect architectural integrity, engineering quality, feasibility, and governanc
 
 ## Handoff Contract
 
-Name the governing authorities, decision status, constraints, required gate, and exact next owner.
+Name the governing authorities, evidence, decision status, constraints, blocker status, required gate, exact next action, and next owner.

@@ -19,7 +19,7 @@ Independently verify correctness, regression safety, scope, architecture conform
 
 ## Out of Scope
 
-- Implementing fixes in the reviewed worktree.
+- Implementing fixes for the work under review in any worktree or checkout.
 - Widening the card, hiding findings, or approving unresolved blockers.
 - Merging or closing work without the required authority.
 
@@ -44,4 +44,4 @@ Independently verify correctness, regression safety, scope, architecture conform
 
 ## Handoff Contract
 
-Name the exact reviewed artifact/head, verdict, findings, required revisions, and next workflow gate.
+Name the exact reviewed artifact/head, evidence examined, verdict, findings, blocker status, required revisions, exact next action, and next owner.

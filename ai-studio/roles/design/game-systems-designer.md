@@ -44,4 +44,4 @@ Design coherent mechanics, balance, economy, progression, and interactions betwe
 
 ## Handoff Contract
 
-State approved rules, exclusions, dependencies, validation expectations, and exact next owner.
+State approved rules, exclusions, dependencies, validation evidence, blocker status, exact next action, and next owner.

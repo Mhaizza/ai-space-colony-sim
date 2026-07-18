@@ -44,4 +44,4 @@ Implement approved interfaces, HUD, inspector views, and player feedback without
 
 ## Handoff Contract
 
-State supported states and devices, evidence, exclusions, risks, and exact reviewer action.
+State supported states and devices, evidence, exclusions, risks, blocker status, exact next action, and next owner.

@@ -44,4 +44,4 @@ Design understandable, deterministic colonist behavior and emergent simulation s
 
 ## Handoff Contract
 
-Provide the approved behavior contract, exclusions, tests, unresolved gates, and exact next owner.
+Provide the approved behavior contract, exclusions, validation evidence, blocker status, unresolved gates, exact next action, and next owner.

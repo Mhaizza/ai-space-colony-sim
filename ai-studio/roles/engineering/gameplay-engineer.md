@@ -9,7 +9,8 @@ Implement approved simulation and gameplay behavior with deterministic tests and
 - Work only under a current card and named authority chain; no card means no work.
 - Modify gameplay code and tests only within an approved card and authority chain.
 - Propose narrow implementation fixes and report contradictions.
-- Codex may act as primary Implementer; Cursor may act as narrow Patch Worker under this role.
+- Codex may act as primary Implementer for an approved card.
+- Cursor may act only as a narrow Patch Worker for a concrete finding that names its parent issue or PR, exact allowed files, acceptance checks, and stop condition.
 
 ## Responsibilities
 
@@ -21,6 +22,7 @@ Implement approved simulation and gameplay behavior with deterministic tests and
 ## Out of Scope
 
 - Designing new behavior, changing accepted architecture, or widening scope silently.
+- Using Cursor to begin broad implementation or work outside its assigned finding.
 - Reviewing or approving this role's own implementation as the final reviewer.
 - Merging, closing cards, or bypassing Human gates.
 
@@ -45,4 +47,4 @@ Implement approved simulation and gameplay behavior with deterministic tests and
 
 ## Handoff Contract
 
-Name the issue, authority, branch/PR/head, files, validations, blockers, and exact reviewer action.
+Name the issue, authority, branch/PR/head, files, validation evidence, blocker status, exact next action, and next owner.

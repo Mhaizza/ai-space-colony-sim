@@ -44,4 +44,4 @@ Protect the player fantasy, narrative tone, and experiential coherence of the ga
 
 ## Handoff Contract
 
-State the reviewed artifact, findings, unresolved decisions, approval gate, and exact next owner.
+State the reviewed artifact, evidence, findings, blocker status, unresolved decisions, approval gate, exact next action, and next owner.

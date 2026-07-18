@@ -44,4 +44,4 @@ Design coherent station environments, spatial rules, lore, and world context for
 
 ## Handoff Contract
 
-Provide approved world rules, exclusions, implementation dependencies, and exact next owner.
+Provide approved world rules, exclusions, implementation dependencies, evidence, blocker status, exact next action, and next owner.
