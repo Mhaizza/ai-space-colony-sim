@@ -6,6 +6,7 @@ import { createInitialState, run } from "../simulation/run.js";
 import type { SimulationState } from "../simulation/tick.js";
 import type { EventRecord } from "../records/logs.js";
 import { deserialize, serialize } from "../core/serialization.js";
+import { advance } from "../core/clock.js";
 import { applyInteraction, createRelationshipStore, type RelationshipStore } from "../colonist/relationships.js";
 import { compareTraces, verifyReplay } from "./replay.js";
 
@@ -372,6 +373,23 @@ describe("multi-colonist replay determinism (Stage 2 Slice 6b, design D2/D3, ADR
     const a = run(createInitialState(11, "c1", "Maya", ["engineering"], [], [zeke, yara]), 150).finalState;
     const b = run(createInitialState(11, "c1", "Maya", ["engineering"], [], [zeke, yara]), 150).finalState;
     expect(a).toEqual(b);
+  });
+
+  it("replays a three-colonist run with competing real initiators and a real responder (Issue #135)", () => {
+    const seeded = createInitialState(10, "c1", "Maya", ["engineering"], [], [yara, zeke]);
+    const initial: SimulationState = {
+      ...seeded,
+      clock: advance(seeded.clock, seeded.policy.workTicks + seeded.policy.restTicks),
+    };
+
+    const first = run(initial, 3).finalState;
+    const second = run(initial, 3).finalState;
+    const offersToZeke = first.socialOffers.offers.filter((offer) => offer.responderId === "zeke");
+
+    expect(offersToZeke).toHaveLength(2);
+    expect(offersToZeke.some((offer) => offer.status === "cancelled" && offer.reason === "responderUnavailable")).toBe(true);
+    expect(second).toEqual(first);
+    expect(verifyReplay(initial, first).kind).toBe("match");
   });
 });
 
