@@ -815,7 +815,9 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
         const goal = decision.goal;
         const responderId = decision.goal.relatedColonistId;
         const action = decision.goal.relatedSocialTaskId;
-        const existing = socialOffers.offers.find((o) => o.status === "pending" && offerGoalKey(o) === goal.key);
+        const existing = socialOffers.offers.find(
+          (o) => o.status === "pending" && o.initiatorId === colonist.identity.id && offerGoalKey(o) === goal.key,
+        );
         if (existing === undefined) {
           const created = createPendingOffer({
             store: socialOffers,
@@ -863,7 +865,12 @@ export function tick(state: SimulationState, deltaTicks: number): TickResult {
   // colonist may initiate or respond. Every pending offer is examined in ascending id order:
   // expiry → cancellation → hold → response delay → eligibility → acceptance draw. Reads
   // pending offers only (ADR-21 Invariant 8) and the shared observation basis for eligibility.
-  for (const offer of state.socialOffers.offers) {
+  // Freeze the post-Phase-5 offer order for this pass. This includes offers created by any
+  // colonist's decision this tick, allowing the ascending-id double-booking guard to cancel
+  // later offers before an invalid multi-pending state can escape tick(). Mutations below
+  // replace `socialOffers`, but do not alter this deterministic iteration basis.
+  const offersAtPhase6Start = socialOffers.offers;
+  for (const offer of offersAtPhase6Start) {
     if (offer.status !== "pending") continue;
     const goalKey = offerGoalKey(offer);
     const initiatorRt = runtimes.get(offer.initiatorId);

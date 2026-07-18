@@ -664,6 +664,41 @@ describe("social offer/response protocol (Stage 2 Slice 5 — design D1–D9, AD
     const b = run(reloaded, 3).finalState;
     expect(b.socialOffers).toEqual(a.socialOffers);
   });
+
+  it("uses the shared Phase-4 responder state when that responder independently decides again in Phase 5 (Issue #135)", () => {
+    const base = pendingOfferState(7);
+    const responder = base.colonists.find((rt) => rt.colonist.identity.id === "zeke")!;
+    const completedGoal = commitGoal(
+      { source: "criticalNeed", tier: 1, key: "criticalNeed:hunger", baseUrgency: 1, relatedNeed: "hunger" },
+      "test responder completion",
+      base.clock.tick,
+    );
+    const responderColonist = withNeeds(withCurrentGoal(responder.colonist, completedGoal), {
+      ...responder.colonist.needs,
+      hunger: { level: 1, ticksBelowLow: 0 },
+    } as ColonistRuntime["colonist"]["needs"]);
+    const state: SimulationState = {
+      ...base,
+      colonists: base.colonists.map((rt) =>
+        rt.colonist.identity.id === "zeke"
+          ? {
+              ...rt,
+              colonist: responderColonist,
+              execution: beginExecution(taskDefinition("eatAtFoodStation"), completedGoal, base.clock.tick),
+            }
+          : rt,
+      ),
+    };
+
+    const result = tick(state, 1);
+    const offer = result.state.socialOffers.offers[0]!;
+    const responderAfter = result.state.colonists.find((rt) => rt.colonist.identity.id === "zeke")!;
+
+    expect(result.events.some((event) => event.kind === "completion" && event.taskId === "eatAtFoodStation")).toBe(true);
+    expect(responderAfter.colonist.currentGoal?.key).not.toBe(completedGoal.key);
+    expect(offer.status).toBe("declined");
+    expect(offer.reason).toBe("responderNotInterruptible");
+  });
 });
 
 describe("goal completion", () => {
@@ -1478,5 +1513,42 @@ describe("full multi-colonist simulation (Stage 2 Slice 6b, design D2/D3, ADR-22
   it("accepts a valid multi-entry collection with unique, ordered ids", () => {
     const state = withOthers(stateAtTickOfDay(0), [zeke, yara]);
     expect(() => validateSimulationState(state)).not.toThrow();
+  });
+});
+
+describe("social protocol at full multi-colonist scale (Stage 2 Slice 6c, Issue #135)", () => {
+  const yara = { id: "yara", name: "Yara", skills: [], baseTraits: [] } as const;
+
+  it("cancels the later offer when two real initiators choose the same responder in one Phase 5", () => {
+    const freeStart = policy.workTicks + policy.restTicks;
+    // With equal voluntary weights, seed 10 selects one of zeke's social candidates for both
+    // c1 and yara. Both are real simulated deciders; neither offer is injected by the fixture.
+    const initial = withOthers(stateAtTickOfDay(freeStart, {}, 10), [yara, zeke]);
+
+    const result = tick(initial, 1);
+    const offersToZeke = result.state.socialOffers.offers.filter((offer) => offer.responderId === "zeke");
+
+    expect(offersToZeke).toHaveLength(2);
+    expect(offersToZeke.map((offer) => [offer.initiatorId, offer.status, offer.reason])).toEqual([
+      ["c1", "pending", null],
+      ["yara", "cancelled", "responderUnavailable"],
+    ]);
+    expect(() => validateSimulationState(result.state)).not.toThrow();
+  });
+
+  it("does not reuse another initiator's pending offer when action and responder are identical", () => {
+    const freeStart = policy.workTicks + policy.restTicks;
+    // Seed 11 makes both c1 and yara choose conversation with zeke. Offer ownership must
+    // include the initiator even though ADR-21 derives the same goal key for both intents.
+    const initial = withOthers(stateAtTickOfDay(freeStart, {}, 11), [yara, zeke]);
+
+    const result = tick(initial, 1);
+    const offersToZeke = result.state.socialOffers.offers.filter((offer) => offer.responderId === "zeke");
+
+    expect(offersToZeke.map((offer) => [offer.initiatorId, offer.action, offer.status, offer.reason])).toEqual([
+      ["c1", "conversation", "pending", null],
+      ["yara", "conversation", "cancelled", "responderUnavailable"],
+    ]);
+    expect(() => validateSimulationState(result.state)).not.toThrow();
   });
 });
