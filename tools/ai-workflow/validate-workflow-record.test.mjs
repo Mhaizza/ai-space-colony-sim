@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -28,6 +29,7 @@ import {
 } from "./validate-workflow-record.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const CLI_SCRIPT = path.join(REPO_ROOT, "tools", "ai-workflow", "validate-workflow-record.mjs");
 const EXAMPLE_SHA = "0123456789abcdef0123456789abcdef01234567";
 const SHORT_SHA = "0123456789abcdef01234567";
 const UPPER_SHA = "0123456789ABCDEF0123456789ABCDEF01234567";
@@ -518,4 +520,38 @@ test("dogfood: docs/ai-workflow template marker examples validate", () => {
 test("dogfood: kanban-update-protocol governed examples validate", () => {
   resetRoleSlugCache();
   assert.equal(dogfoodMarkersFromFile("ai-studio/workflows/kanban-update-protocol.md"), 2);
+});
+
+test("CLI: documented path invocation accepts a valid comment file", () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), "ai-workflow-record-cli-"));
+  try {
+    const commentPath = path.join(tempDir, "path-to-comment.md");
+    writeFileSync(commentPath, commentWithRecord(BASE_START), "utf8");
+    const result = spawnSync(process.execPath, [CLI_SCRIPT, commentPath], {
+      encoding: "utf8",
+      cwd: REPO_ROOT,
+    });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /ai-workflow-record:v1 valid/);
+    assert.equal(result.stderr, "");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: documented path invocation rejects a malformed comment file", () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), "ai-workflow-record-cli-bad-"));
+  try {
+    const commentPath = path.join(tempDir, "path-to-comment.md");
+    writeFileSync(commentPath, commentWithPayload("{not-json"), "utf8");
+    const result = spawnSync(process.execPath, [CLI_SCRIPT, commentPath], {
+      encoding: "utf8",
+      cwd: REPO_ROOT,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /\[record\.json\].*malformed JSON/i);
+    assert.match(result.stderr, /ai-workflow-record:v1 invalid: \d+ finding\(s\)/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });

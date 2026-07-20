@@ -67,7 +67,7 @@ If you want to start work immediately without redesigning the process each time,
 Governed workflow comments carry exactly one `ai-workflow-record:v1` HTML comment marker. Validate a raw GitHub comment body with:
 
 ```powershell
-node tools/ai-workflow/validate-workflow-record.mjs @path-to-comment.md
+node tools/ai-workflow/validate-workflow-record.mjs path-to-comment.md
 node --test tools/ai-workflow/validate-workflow-record.test.mjs
 ```
 

@@ -675,12 +675,19 @@ function wrapComment(payloadObject) {
 function runCli() {
   const input = process.argv[2];
   if (!input) {
-    console.error("Usage: node tools/ai-workflow/validate-workflow-record.mjs <comment-body-or-@file>");
+    console.error("Usage: node tools/ai-workflow/validate-workflow-record.mjs <path-to-comment.md>");
     return 1;
   }
-  const commentBody = input.startsWith("@")
-    ? readFileSync(input.slice(1), "utf8")
-    : input;
+  // Documented operator path is a bare filesystem path. Optional leading @ is
+  // accepted and stripped for compatibility with older examples.
+  const filePath = input.startsWith("@") ? input.slice(1) : input;
+  let commentBody;
+  try {
+    commentBody = readFileSync(filePath, "utf8");
+  } catch (error) {
+    console.error(`Unable to read comment file: ${filePath}`);
+    return 1;
+  }
   const result = validateWorkflowRecord(commentBody);
   if (result.findings.length === 0) {
     console.log("ai-workflow-record:v1 valid");
