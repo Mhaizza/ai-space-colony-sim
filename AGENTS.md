@@ -74,3 +74,12 @@ If implementation discovers a contradiction or needs to widen scope:
 - Templates: `docs/ai-workflow/`
 
 This file routes agents into the workflow pack after the AI Studio boot sequence.
+
+## Cursor Cloud specific instructions
+
+The only runnable code lives in `prototype/` — a headless, deterministic TypeScript simulation with zero runtime dependencies. Everything else (`game/`, `design/`, `docs/`, `ai-studio/`, `tools/`, `ai-space-colony-starter-kit/`) is documentation/workflow content, not executable.
+
+- Test: `npm --prefix prototype test` (Vitest, ~640 tests).
+- Lint/typecheck gate: `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`. There is no ESLint; the strict `tsc` typecheck is the lint gate (see `.github/PULL_REQUEST_TEMPLATE.md`).
+- There is no build step, dev server, or UI. The "application" is the headless CLI.
+- Running the app: `prototype/src/main.ts` exports `runCli(argv)` (commands: `run`/`continue`/`verify`) but is a PURE module with no process wrapper that prints. To run it, add a one-line entry (e.g. `console.log(runCli(process.argv.slice(2)))`) and execute with `npx tsx` — plain `node` type-stripping fails because internal imports use `.js` specifiers that resolve to `.ts` files, which only `tsx` remaps. Example: `npx tsx runner.ts run --seed 42 --ticks 50`.
