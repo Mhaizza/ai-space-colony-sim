@@ -202,9 +202,13 @@ Every task should use these templates:
 
 - `task-template.md`
 - `start-task-template.md`
+- `handoff-template.md`
 - `pr-summary-template.md`
 - `review-template.md`
+- `human-approval-template.md`
 - `done-update-template.md`
+
+Governed workflow comments must include exactly one `ai-workflow-record:v1` machine marker. Validate new records with `tools/ai-workflow/validate-workflow-record.mjs`.
 
 ## Review Priorities
 

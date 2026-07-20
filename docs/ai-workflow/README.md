@@ -41,6 +41,11 @@ If you want to start work immediately without redesigning the process each time,
 - Copy [`start-task-template.md`](./start-task-template.md)
 - Post it before design, ADR, or implementation begins
 
+### When handing off a card
+
+- Copy [`handoff-template.md`](./handoff-template.md)
+- Supersede the effective assignment record
+
 ### When opening a PR
 
 - Copy [`pr-summary-template.md`](./pr-summary-template.md)
@@ -49,9 +54,26 @@ If you want to start work immediately without redesigning the process each time,
 
 - Copy [`review-template.md`](./review-template.md)
 
+### When recording Human approval
+
+- Copy [`human-approval-template.md`](./human-approval-template.md)
+
 ### When closing a card
 
 - Copy [`done-update-template.md`](./done-update-template.md)
+
+## Machine Records
+
+Governed workflow comments carry exactly one `ai-workflow-record:v1` HTML comment marker. Validate a raw GitHub comment body with:
+
+```powershell
+node tools/ai-workflow/validate-workflow-record.mjs path-to-comment.md
+node --test tools/ai-workflow/validate-workflow-record.test.mjs
+```
+
+Legacy prose comments without a marker remain historically readable. They are not inferred, rewritten, or migrated into machine records.
+
+Canonical role slugs live in [`ai-studio/roles/role-slugs.json`](../../ai-studio/roles/role-slugs.json) (regenerate with `node tools/ai-workflow/generate-role-slugs.mjs .`).
 
 ## Files
 
@@ -59,9 +81,11 @@ If you want to start work immediately without redesigning the process each time,
 - [`prompt-pack.md`](./prompt-pack.md) - copy-paste prompts for each AI role
 - [`task-template.md`](./task-template.md) - task/card template
 - [`start-task-template.md`](./start-task-template.md) - start-task template
+- [`handoff-template.md`](./handoff-template.md) - handoff template
 - [`pr-summary-template.md`](./pr-summary-template.md) - PR body template
 - [`review-template.md`](./review-template.md) - review result template
-- [`done-update-template.md`](./done-update-template.md) - final closeout template
+- [`human-approval-template.md`](./human-approval-template.md) - Human approval template
+- [`done-update-template.md`](./done-update-template.md) - Kanban Update / Done template
 
 ## Default Team Shape
 
@@ -82,6 +106,7 @@ From the repository root, run:
 ```powershell
 node tools/ai-workflow/validate-workflow-pack.mjs .
 node --test tools/ai-workflow/validate-workflow-pack.test.mjs
+node --test tools/ai-workflow/validate-workflow-record.test.mjs
 ```
 
-The validator is read-only. It checks required workflow files, policy and role contracts, lifecycle template fields, entrypoint routing, and local Markdown links.
+The pack validator is read-only. It checks required workflow files, policy and role contracts, lifecycle template fields, entrypoint routing, and local Markdown links. The record validator checks `ai-workflow-record:v1` payload-local structure only.

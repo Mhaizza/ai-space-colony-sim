@@ -35,18 +35,20 @@ const VALID_CONTENT = {
     "- [`ai-workflow/README.md`](./ai-workflow/README.md)\n" +
     "- [`ai-workflow/operating-model.md`](./ai-workflow/operating-model.md)\n" +
     "- [`ai-workflow/prompt-pack.md`](./ai-workflow/prompt-pack.md)\n",
-  "docs/ai-workflow/README.md": "# AI Workflow Pack\n\n[Model](./operating-model.md) [Prompts](./prompt-pack.md) [Task](./task-template.md) [Start](./start-task-template.md) [PR](./pr-summary-template.md) [Review](./review-template.md) [Done](./done-update-template.md)\n",
+  "docs/ai-workflow/README.md": "# AI Workflow Pack\n\n[Model](./operating-model.md) [Prompts](./prompt-pack.md) [Task](./task-template.md) [Start](./start-task-template.md) [Handoff](./handoff-template.md) [PR](./pr-summary-template.md) [Review](./review-template.md) [Human](./human-approval-template.md) [Done](./done-update-template.md)\n",
   "docs/ai-workflow/operating-model.md": "# AI Agent Operating Model\n\n## Authority Hierarchy\n1. Agents read `ai-studio/AI_STUDIO_BOOT.md` first.\n2. This workflow pack supplements those sources.\n3. During Boot Step 8, use this pack.\n\n## Core Laws\n### Law 1 - No Card, No Work\n### Law 2 - One Card, One Owner\n### Law 3 - Authority First\n### Law 4 - No Silent Scope Expansion\n### Law 5 - Review Before Merge\n### Law 6 - Findings First\n### Law 7 - Exact Next Step\n## Roles\n### Planner\n### Implementer\n### Reviewer\n### Workflow Operator\n### Human Owner\n",
   "docs/ai-workflow/prompt-pack.md": "# Prompt Pack\n\n## 1. Planner\n## 2. Implementer\n## 3. Reviewer\n## 4. Workflow Operator\n",
   "docs/ai-workflow/task-template.md": "# Task Template\nTitle:\nGoal:\nIn Scope:\nOut of Scope:\nDependencies:\nAuthority:\nRisks:\nAcceptance Criteria:\nRequired Validation:\nWorkflow Gates:\nExact Next Step:\n",
-  "docs/ai-workflow/start-task-template.md": "# Start Task Template\nTask:\nGoal:\nAcceptance Criteria:\nFiles Expected To Change:\nDependencies:\nAuthority:\nRisks:\nEstimated Deliverables:\nExact Stop Condition:\n",
+  "docs/ai-workflow/start-task-template.md": "# Start Task Template\nTask:\nGoal:\nAcceptance Criteria:\nFiles Expected To Change:\nDependencies:\nAuthority:\nRisks:\nEstimated Deliverables:\nExact Stop Condition:\nai-workflow-record:v1\n",
+  "docs/ai-workflow/handoff-template.md": "# Handoff Template\nCard:\nFrom Worker:\nFrom Role:\nTo Worker:\nTo Role:\nReason:\nAuthority:\nExact Next Step:\nai-workflow-record:v1\n",
   "docs/ai-workflow/pr-summary-template.md":
     "# PR Summary Template\n## Summary\n## Scope\n## Authority\n## Changes\n## Not Changed\n## Validation\n" +
     "- `npm --prefix prototype test`:\n" +
     "- `npm exec --prefix prototype -- tsc --noEmit -p prototype/tsconfig.json`:\n" +
     "## Risks / Notes\n## Workflow\n",
-  "docs/ai-workflow/review-template.md": "# Review Template\nFindings:\nOpen Questions / Assumptions:\nVerdict:\nReason:\nRequired Fixes:\nWorkflow State:\nExact Next Step:\n",
-  "docs/ai-workflow/done-update-template.md": "# Done Update Template\nCard:\nStatus: Done\nCompleted:\nChanged Files:\nValidation:\nPipeline Trail:\nScope Delivered:\nScope Not Delivered:\nFollow-up Tasks:\nExact Next Step:\n",
+  "docs/ai-workflow/review-template.md": "# Review Template\nFindings:\nOpen Questions / Assumptions:\nVerdict:\nReason:\nRequired Fixes:\nWorkflow State:\nExact Next Step:\nai-workflow-record:v1\n",
+  "docs/ai-workflow/human-approval-template.md": "# Human Approval Template\nCard:\nArtifact:\nHead:\nDecision:\nAuthority:\nExact Next Step:\nai-workflow-record:v1\n",
+  "docs/ai-workflow/done-update-template.md": "# Done Update Template\nCard:\nStatus: Review | Blocked | Done\nCompleted:\nChanged Files:\nValidation:\nPipeline Trail:\nScope Delivered:\nScope Not Delivered:\nFollow-up Tasks:\nExact Next Step:\nai-workflow-record:v1\n",
   ".github/ISSUE_TEMPLATE/feature-card.md": "---\nname: Feature Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
   ".github/ISSUE_TEMPLATE/design-card.md": "---\nname: Design Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
   ".github/ISSUE_TEMPLATE/adr-card.md": "---\nname: ADR Card\n---\n## Goal\n## In Scope\n## Out of Scope\n## Dependencies\n## Authority\n## Risks\n## Acceptance Criteria\n## Required Validation\n## Workflow Gates\n## Exact Next Step\n",
@@ -321,6 +323,21 @@ test("rejects a relative contact link URL in issue template config", () => {
       finding.file === ".github/ISSUE_TEMPLATE/config.yml" &&
       finding.ruleId === "config.contact-link" &&
       finding.message.includes("../docs/ai-workflow/README.md")
+    ));
+  });
+});
+
+test("requires ai-workflow-record:v1 marker in governed templates", () => {
+  withFixture({
+    overrides: {
+      "docs/ai-workflow/start-task-template.md":
+        "# Start Task Template\nTask:\nGoal:\nAcceptance Criteria:\nFiles Expected To Change:\nDependencies:\nAuthority:\nRisks:\nEstimated Deliverables:\nExact Stop Condition:\n",
+    },
+  }, (root) => {
+    assert.ok(validateWorkflowPack(root).findings.some((finding) =>
+      finding.file === "docs/ai-workflow/start-task-template.md" &&
+      finding.ruleId === "template.workflow-record" &&
+      finding.message.includes("ai-workflow-record:v1")
     ));
   });
 });
