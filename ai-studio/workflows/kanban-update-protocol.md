@@ -52,6 +52,10 @@ Files Expected To Change:
 Dependencies:            Other cards, ADRs, or decisions this task depends on. Or "None."
 Risks:                   Known unknowns, scope edge cases, or constitutional conflicts.
 Estimated Deliverables:  List of artifacts this task will produce (files, decisions, formats).
+
+<!-- ai-workflow-record:v1
+{"type":"start_task","card":146,"worker":"cursor","role":"gameplay-engineer","artifact":null,"head":null,"result":null,"supersedes":null}
+-->
 ```
 
 **Rules:**
@@ -159,6 +163,10 @@ Changed Files:
   REMOVED  path/to/deleted-file.ts
 Validation:      How it was confirmed that the work meets acceptance criteria.
 Follow-up Tasks: List of new GitHub Issues to create, or "None."
+
+<!-- ai-workflow-record:v1
+{"type":"kanban_update","card":146,"worker":"cursor","role":"gameplay-engineer","artifact":null,"head":null,"result":null,"supersedes":null}
+-->
 ```
 
 **Rules for the format:**

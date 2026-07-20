@@ -14,8 +14,10 @@ export const REQUIRED_FILES = Object.freeze([
   "docs/ai-workflow/prompt-pack.md",
   "docs/ai-workflow/task-template.md",
   "docs/ai-workflow/start-task-template.md",
+  "docs/ai-workflow/handoff-template.md",
   "docs/ai-workflow/pr-summary-template.md",
   "docs/ai-workflow/review-template.md",
+  "docs/ai-workflow/human-approval-template.md",
   "docs/ai-workflow/done-update-template.md",
   ".github/ISSUE_TEMPLATE/feature-card.md",
   ".github/ISSUE_TEMPLATE/design-card.md",
@@ -83,6 +85,10 @@ const TEMPLATE_RULES = Object.freeze([
     "Task:", "Goal:", "Acceptance Criteria:", "Files Expected To Change:", "Dependencies:",
     "Authority:", "Risks:", "Estimated Deliverables:", "Exact Stop Condition:",
   ]],
+  ["docs/ai-workflow/handoff-template.md", [
+    "Card:", "From Worker:", "From Role:", "To Worker:", "To Role:", "Reason:",
+    "Authority:", "Exact Next Step:",
+  ]],
   ["docs/ai-workflow/pr-summary-template.md", [
     "## Summary", "## Scope", "## Authority", "## Changes", "## Not Changed",
     "## Validation", "## Risks / Notes", "## Workflow",
@@ -91,10 +97,22 @@ const TEMPLATE_RULES = Object.freeze([
     "Findings:", "Open Questions / Assumptions:", "Verdict:", "Reason:",
     "Required Fixes:", "Workflow State:", "Exact Next Step:",
   ]],
-  ["docs/ai-workflow/done-update-template.md", [
-    "Card:", "Status: Done", "Completed:", "Changed Files:", "Validation:", "Pipeline Trail:",
-    "Scope Delivered:", "Scope Not Delivered:", "Follow-up Tasks:", "Exact Next Step:",
+  ["docs/ai-workflow/human-approval-template.md", [
+    "Card:", "Artifact:", "Head:", "Decision:", "Authority:", "Exact Next Step:",
   ]],
+  ["docs/ai-workflow/done-update-template.md", [
+    "Card:", "Status: Review | Blocked | Done", "Completed:", "Changed Files:", "Validation:",
+    "Pipeline Trail:", "Scope Delivered:", "Scope Not Delivered:", "Follow-up Tasks:",
+    "Exact Next Step:",
+  ]],
+]);
+
+const WORKFLOW_RECORD_MARKER_FILES = Object.freeze([
+  "docs/ai-workflow/start-task-template.md",
+  "docs/ai-workflow/handoff-template.md",
+  "docs/ai-workflow/review-template.md",
+  "docs/ai-workflow/human-approval-template.md",
+  "docs/ai-workflow/done-update-template.md",
 ]);
 
 const ISSUE_TEMPLATE_AUTHORITY_FILES = Object.freeze([
@@ -177,6 +195,19 @@ export function validateWorkflowPack(rootDir) {
       if (!hasExactTrimmedLine(content, field)) {
         findings.push(finding(relativePath, "template.field", `Missing required template field: ${field}`));
       }
+    }
+  }
+
+  for (const relativePath of WORKFLOW_RECORD_MARKER_FILES) {
+    const content = contents.get(relativePath);
+    if (content === undefined) continue;
+    checksRun += 1;
+    if (!content.includes("ai-workflow-record:v1")) {
+      findings.push(finding(
+        relativePath,
+        "template.workflow-record",
+        "Missing required contract: ai-workflow-record:v1",
+      ));
     }
   }
 
